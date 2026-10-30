@@ -1,0 +1,38 @@
+# Node / frontend
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# .NET / backend
+**/bin/
+**/obj/
+.vs/
+TestResults/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+**/appsettings.Development.json
+**/appsettings.Local.json
+*.pfx
+*.p12
+*.pem
+*.key
+secrets.json
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Databases and temporary files
+*.db
+*.sqlite
+*.sqlite3
+*.log
+tmp/
