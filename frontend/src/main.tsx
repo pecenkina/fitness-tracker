@@ -16,7 +16,7 @@ type Plan = Pick<Workout,'id'|'name'|'exercises'>;
 type DraftSet = {completed:boolean; key: number; reps: string; weight: string};
 type DraftMove = { key: number; id: string; sets: DraftSet[]};
 let nextKey = 0;
-const newSet = (first?: DraftSet): DraftSet => ({completed:false,key: ++nextKey, reps: first?.reps ?? '10', weight: first?.weight ?? ''});
+const newSet = (previous?: DraftSet): DraftSet => ({completed:false,key: ++nextKey, reps: previous?.reps ?? '10', weight: previous?.weight ?? ''});
 const newMove = (id: string): DraftMove => ({key: ++nextKey, id, sets: [newSet()]});
 const journal = '/api/local/workouts';
 
@@ -120,7 +120,7 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
           {move.sets.length > 1 && <button className="link remove" type="button" aria-label={'Убрать подход '+(i+1)} onClick={() => change({...move, sets:move.sets.filter(s => s.key !== set.key)})}>×</button>}
         </div>;
       })}
-      <button className="link" type="button" disabled={move.sets.length >= 50} onClick={() => change({...move,sets:[...move.sets,newSet(move.sets[0])]})}>+ Подход</button>
+      <button className="link" type="button" disabled={move.sets.length >= 50} onClick={() => change({...move,sets:[...move.sets,newSet(move.sets.at(-1))]})}>+ Подход</button>
     </section>})}
     {mode==='workout' && !initial && <label className="tick"><input type="checkbox" name="save_plan"/>Также сохранить как план</label>}
     <div className="actions"><button type="button" disabled={moves.length >= 50} onClick={() => setMoves([...moves,newMove(String(catalog[0].id))])}>+ Упражнение</button>
