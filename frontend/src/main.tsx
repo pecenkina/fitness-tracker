@@ -5,6 +5,7 @@ import {Calendar} from './calendar';
 import {CustomExercise} from './custom';
 import {ExercisePicker} from './exercise-picker';
 import {Catalog} from './catalog';
+import {usesCounterweight, describeWeight} from './load';
 import {Overview} from './overview';
 import './style.css';
 
@@ -15,7 +16,7 @@ type Plan = Pick<Workout,'id'|'name'|'exercises'>;
 type DraftSet = {completed:boolean; key: number; reps: string; weight: string};
 type DraftMove = { key: number; id: string; sets: DraftSet[]};
 let nextKey = 0;
-const newSet = (): DraftSet => ({completed:false,key: ++nextKey, reps: '10', weight: ''});
+const newSet = (first?: DraftSet): DraftSet => ({completed:false,key: ++nextKey, reps: first?.reps ?? '10', weight: first?.weight ?? ''});
 const newMove = (id: string): DraftMove => ({key: ++nextKey, id, sets: [newSet()]});
 const journal = '/api/local/workouts';
 
@@ -44,7 +45,12 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
   const [duration,setDuration]=useState(String(initial?.duration_minutes ?? ''));
   const allSets=moves.flatMap(m=>m.sets);
   const counted=mode==='workout'?allSets.filter(s=>s.completed):allSets;
-  const volume=counted.reduce((total,s)=>total+Number(s.reps)*Number(s.weight),0);
+  const exerciseById = new Map(catalog.map(item => [String(item.id), item]));
+  const volume = moves.reduce((total, move) => {
+    if (usesCounterweight(exerciseById.get(move.id))) return total;
+    return total + move.sets.reduce((sum, set) => mode === 'workout' && !set.completed
+      ? sum : sum + Number(set.reps) * Number(set.weight), 0);
+  }, 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const change = (move: DraftMove) => setMoves(items => items.map(item => item.key === move.key ? move : item));
@@ -84,8 +90,11 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
       {mode!=='plan' && <><label>Дата<input type="date" name="date" required defaultValue={initial?.workout_date ?? day}/></label>
       <label>Длительность, мин<input type="number" min="1" name="duration" value={duration} onChange={e=>setDuration(e.target.value)} placeholder="По желанию"/></label></>}</section>
     <div className="line"><h2>Упражнения</h2><span>{moves.length} упр. · {allSets.length} подх.</span></div>
-    {moves.map((move, index) => <section className="card" key={move.key}>
-      <div className="line"><h2>{catalog.find(e=>String(e.id)===move.id)?.name || "Упражнение "+(index+1)}</h2>
+    {moves.map((move, index) => {
+      const exercise = exerciseById.get(move.id);
+      const weightLabel = usesCounterweight(exercise) ? 'Противовес' : 'Вес';
+      return <section className="card" key={move.key}>
+      <div className="line"><h2>{exercise?.name || "Упражнение "+(index+1)}</h2>
         {moves.length > 1 && <div className="actions">
           <button type="button" disabled={index === 0} onClick={() => moveExercise(index, -1)}>↑ Выше</button>
           <button type="button" disabled={index === moves.length - 1} onClick={() => moveExercise(index, 1)}>↓ Ниже</button>
@@ -93,20 +102,21 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
         </div>}
       </div>
       <ExercisePicker catalog={catalog} value={move.id} onChange={id => change({...move, id})}/>
-      <div className="set-head"><span>Подход</span><span>Вес</span><span>Повторы</span>{mode==='workout' && <span>Готово</span>}</div>
+      {usesCounterweight(exercise) && <p className="muted">Меньше противовес — меньше помощь. В общий объём входит только внешнее отягощение.</p>}
+      <div className="set-head"><span>Подход</span><span>{weightLabel}</span><span>Повторы</span>{mode==='workout' && <span>Готово</span>}</div>
       {move.sets.map((set, i) => {
         function field(key: 'reps'|'weight', value: string) {
           change({...move, sets: move.sets.map(s => s.key === set.key ? {...s, [key]:value} : s)});
         }
         return <div key={set.key} className="set"><strong>#{i+1}</strong>
-          <input aria-label={'Вес, кг — подход '+(i+1)} type="number" min="0" max="99999.99" step="0.01" placeholder="кг" value={set.weight} onChange={e=>field('weight',e.target.value)}/>
+          <input aria-label={weightLabel+', кг — подход '+(i+1)} type="number" min="0" max="99999.99" step="0.01" placeholder="кг" value={set.weight} onChange={e=>field('weight',e.target.value)}/>
           <input aria-label={'Повторы — подход '+(i+1)} type="number" min="1" required value={set.reps} onChange={e=>field('reps',e.target.value)}/>
           {mode==='workout' ? <input className="done" type="checkbox" aria-label={'Выполнен подход '+(i+1)} checked={set.completed} onChange={e=>change({...move,sets:move.sets.map(s=>s.key===set.key?{...s,completed:e.target.checked}:s)})}/> : <span/>}
           {move.sets.length > 1 && <button className="link remove" type="button" aria-label={'Убрать подход '+(i+1)} onClick={() => change({...move, sets:move.sets.filter(s => s.key !== set.key)})}>×</button>}
         </div>;
       })}
-      <button className="link" type="button" disabled={move.sets.length >= 50} onClick={() => change({...move,sets:[...move.sets,newSet()]})}>+ Подход</button>
-    </section>)}
+      <button className="link" type="button" disabled={move.sets.length >= 50} onClick={() => change({...move,sets:[...move.sets,newSet(move.sets[0])]})}>+ Подход</button>
+    </section>})}
     {mode==='workout' && !initial && <label className="tick"><input type="checkbox" name="save_plan"/>Также сохранить как план</label>}
     <div className="actions"><button type="button" disabled={moves.length >= 50} onClick={() => setMoves([...moves,newMove(String(catalog[0].id))])}>+ Упражнение</button>
 
@@ -215,7 +225,7 @@ function App() {
            <button onClick={()=>navigate('history')}>Открыть журнал</button></section>}
            {plans.map(plan=><section className="card" key={plan.id}><h2>{plan.name}</h2>
              {plan.exercises.map((move,i)=><div className="record" key={i}><b>{move.name}</b>
-             <ol>{move.sets.map((set,j)=><li key={j}>{set.reps} повт. · {set.weight_kg===null?'вес не указан':set.weight_kg+' кг'}</li>)}</ol></div>)}
+             <ol>{move.sets.map((set,j)=><li key={j}>{set.reps} повт. · {describeWeight(set.weight_kg,catalog.find(e=>e.id===move.exercise_id))}</li>)}</ol></div>)}
              <div className="record-actions"><button className="primary" disabled={busy} onClick={()=>edit(undefined,plan)}>Начать тренировку</button>
              <button onClick={()=>edit(undefined,plan,'plan')}>Изменить план</button>
              <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</section><Calendar canSchedule={catalog.length>0} day={day} select={setDay} entries={schedule} plans={plans} onStart={row=>edit(row)} onCancel={remove}
@@ -231,7 +241,7 @@ function App() {
           <span className="date">{new Date(w.workout_date+'T12:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</span>
           <strong>{w.name}</strong><span>Упражнений: {w.exercises.length}{w.duration_minutes && ' · '+w.duration_minutes+' мин'}</span></summary>
           {w.exercises.map((m,i) => <section key={i} className="record"><h3>{m.name}</h3><ol>{m.sets.map((s,j) =>
-            <li key={j}>{(s.completed ?? m.completed)===false?'Пропущен':'Выполнен'} · {s.reps} повт. · {s.weight_kg === null ? 'вес не указан' : s.weight_kg === 0 ? 'свой вес' : s.weight_kg+' кг'}</li>)}</ol></section>)}
+            <li key={j}>{(s.completed ?? m.completed)===false?'Пропущен':'Выполнен'} · {s.reps} повт. · {describeWeight(s.weight_kg,catalog.find(e=>e.id===m.exercise_id))}</li>)}</ol></section>)}
         <div className="record-actions"><button disabled={busy} onClick={()=>savePlan(w)}>Сохранить как план</button><button disabled={busy} onClick={() => edit(w)}>Изменить</button>
           <button disabled={busy} className="danger" onClick={() => remove(w)}>Удалить</button></div>
         </details>)}</>}</>}</>}
