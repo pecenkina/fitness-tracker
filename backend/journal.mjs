@@ -35,7 +35,18 @@ export function localJournal(db) {
     res.set('Cache-Control', 'no-store').json(result.rows);
   });
 
-  router.post('/', express.json({limit: '200kb'}), async (req, res) => {
+  router.param('id', (req, res, next, id) => {
+    if (!/^[1-9]\d*$/.test(id) || !positive(Number(id))) return res.status(400).json({error: 'Некорректный номер записи'});
+    next();
+  });
+  router.delete('/:id', async (req, res) => {
+    const result = await db.query(`DELETE FROM workouts w USING users u WHERE w.user_id=u.id
+      AND u.email=$1 AND u.password_hash=$2 AND w.id=$3 AND w.status='completed'`, [profile, marker, req.params.id]);
+    if (!result.rowCount) return res.status(404).json({error: 'Тренировка не найдена'});
+    res.sendStatus(204);
+  });
+
+  async function save(req, res) {
     if (!req.is('application/json') || !validWorkout(req.body)) {
       return res.status(400).json({error: 'Проверьте дату, название, упражнения и значения подходов.'});
     }
@@ -46,9 +57,18 @@ export function localJournal(db) {
       await client.query('INSERT INTO users(email,password_hash) VALUES ($1,$2) ON CONFLICT DO NOTHING', [profile, marker]);
       const owner = await client.query('SELECT id FROM users WHERE email=$1 AND password_hash=$2', [profile, marker]);
       if (!owner.rowCount) throw new Error('Локальный профиль недоступен');
-      const insert = await client.query(`INSERT INTO workouts(user_id,name,workout_date,duration_minutes,status)
-        VALUES ($1,$2,$3,$4,'completed') RETURNING id`, [owner.rows[0].id, name.trim(), workout_date, duration_minutes ?? null]);
-      const id = insert.rows[0].id;
+      const params = [owner.rows[0].id, name.trim(), workout_date, duration_minutes ?? null];
+      const workout = req.params.id
+        ? await client.query(`UPDATE workouts SET name=$2, workout_date=$3, duration_minutes=$4
+            WHERE user_id=$1 AND id=$5 AND status='completed' RETURNING id`, [...params, req.params.id])
+        : await client.query(`INSERT INTO workouts(user_id,name,workout_date,duration_minutes,status)
+            VALUES ($1,$2,$3,$4,'completed') RETURNING id`, params);
+      if (!workout.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({error: 'Тренировка не найдена'});
+      }
+      const id = workout.rows[0].id;
+      if (req.params.id) await client.query('DELETE FROM workout_exercises WHERE workout_id=$1', [id]);
       for (const [i, exercise] of exercises.entries()) {
         const move = await client.query(`INSERT INTO workout_exercises(workout_id,exercise_id,position)
           VALUES ($1,$2,$3) RETURNING id`, [id, exercise.exercise_id, i + 1]);
@@ -57,7 +77,7 @@ export function localJournal(db) {
           FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(s,ord)`, [move.rows[0].id, JSON.stringify(exercise.sets)]);
       }
       await client.query('COMMIT');
-      res.status(201).json({id});
+      res.status(req.params.id ? 200 : 201).json({id});
     } catch (error) {
       await client.query('ROLLBACK');
       if (error.code === '23503') return res.status(400).json({error: 'Выберите упражнение из актуального каталога.'});
@@ -65,6 +85,9 @@ export function localJournal(db) {
     } finally {
       client.release();
     }
-  });
+  }
+  const parse = express.json({limit: '200kb'});
+  router.post('/', parse, save);
+  router.put('/:id', parse, save);
   return router;
 }
