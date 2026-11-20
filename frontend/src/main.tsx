@@ -48,6 +48,15 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const change = (move: DraftMove) => setMoves(items => items.map(item => item.key === move.key ? move : item));
+  function moveExercise(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    setMoves(items => {
+      if (target < 0 || target >= items.length) return items;
+      const reordered = [...items];
+      [reordered[index], reordered[target]] = [items[target], items[index]];
+      return reordered;
+    });
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
@@ -76,7 +85,13 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
       <label>Длительность, мин<input type="number" min="1" name="duration" value={duration} onChange={e=>setDuration(e.target.value)} placeholder="По желанию"/></label></>}</section>
     <div className="line"><h2>Упражнения</h2><span>{moves.length} упр. · {allSets.length} подх.</span></div>
     {moves.map((move, index) => <section className="card" key={move.key}>
-      <div className="line"><h2>{catalog.find(e=>String(e.id)===move.id)?.name || "Упражнение "+(index+1)}</h2>{moves.length > 1 && <button type="button" className="link" onClick={() => setMoves(moves.filter(m => m.key !== move.key))}>Убрать упражнение</button>}</div>
+      <div className="line"><h2>{catalog.find(e=>String(e.id)===move.id)?.name || "Упражнение "+(index+1)}</h2>
+        {moves.length > 1 && <div className="actions">
+          <button type="button" disabled={index === 0} onClick={() => moveExercise(index, -1)}>↑ Выше</button>
+          <button type="button" disabled={index === moves.length - 1} onClick={() => moveExercise(index, 1)}>↓ Ниже</button>
+          <button type="button" className="link" onClick={() => setMoves(moves.filter(m => m.key !== move.key))}>Убрать упражнение</button>
+        </div>}
+      </div>
       <ExercisePicker catalog={catalog} value={move.id} onChange={id => change({...move, id})}/>
       <div className="set-head"><span>Подход</span><span>Вес</span><span>Повторы</span>{mode==='workout' && <span>Готово</span>}</div>
       {move.sets.map((set, i) => {
