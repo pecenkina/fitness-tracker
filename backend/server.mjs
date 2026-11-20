@@ -1,10 +1,16 @@
 import express from 'express';
 import pg from 'pg';
+import {fileURLToPath} from 'node:url';
+import {localJournal} from './journal.mjs';
 import {localizeExercise} from './catalog/exercisedb-ru.mjs';
 
 const db = new pg.Pool({connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 4000});
 db.on('error', error => console.error('PostgreSQL:', error.message));
 const app = express();
+if (process.argv.includes('--local-journal')) {
+  app.use('/api/local/workouts', localJournal(db));
+  app.use(express.static(fileURLToPath(new URL('../frontend/dist/', import.meta.url))));
+}
 const fields = `SELECT e.id, e.name, e.description, e.difficulty, e.equipment, e.goals,
   ARRAY(SELECT m.name FROM exercise_muscles em JOIN muscle_groups m ON m.id = em.muscle_id
         WHERE em.exercise_id = e.id ORDER BY m.name) AS muscles FROM exercises e`;
