@@ -1,9 +1,10 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {createRoot} from 'react-dom/client';
+import {Catalog} from './catalog';
 import {Overview} from './overview';
 import './style.css';
 
-export type Exercise = {id: number; name: string; muscles: string[]};
+export type Exercise = {id: number; name: string; description: string; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
 export type Workout = {id: number; name: string; workout_date: string; duration_minutes: number | null;
   exercises: {name: string; exercise_id: number; sets: {reps: number; weight_kg: number | null}[]}[]};
 type DraftSet = {key: number; reps: string; weight: string};
@@ -29,9 +30,9 @@ function today() {
   return [now.getFullYear(), String(now.getMonth()+1).padStart(2,'0'), String(now.getDate()).padStart(2,'0')].join('-');
 }
 
-function Editor({catalog, initial, onClose, onSave}: {initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number) => void}) {
+function Editor({catalog, initial, selected, onClose, onSave}: {selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number) => void}) {
   const [moves, setMoves] = useState<DraftMove[]>(() => initial ? initial.exercises.map(m => ({key: ++nextKey, id: String(m.exercise_id),
-    sets: m.sets.map(s => ({key: ++nextKey, reps: String(s.reps), weight: String(s.weight_kg ?? '')}))})) : [newMove(String(catalog[0].id))]);
+    sets: m.sets.map(s => ({key: ++nextKey, reps: String(s.reps), weight: String(s.weight_kg ?? '')}))})) : (selected.length ? selected : [catalog[0].id]).map(id => newMove(String(id))));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const change = (move: DraftMove) => setMoves(items => items.map(item => item.key === move.key ? move : item));
@@ -50,7 +51,7 @@ function Editor({catalog, initial, onClose, onSave}: {initial?: Workout; catalog
     } catch (err) {setError(message(err)); setSaving(false)}
   }
   return <form onSubmit={submit}><fieldset disabled={saving} className="plain">
-    <button type="button" className="link" onClick={onClose}>← В историю</button>
+    <button type="button" className="link" onClick={onClose}>← Назад</button>
     <h1>{initial ? 'Редактирование тренировки' : 'Новая тренировка'}</h1>
     <section className="card meta"><label>Название<input name="name" defaultValue={initial?.name} required maxLength={120} placeholder="Например, силовая на ноги"/></label>
       <label>Дата<input type="date" name="date" required defaultValue={initial?.workout_date ?? today()}/></label>
@@ -81,7 +82,8 @@ function App() {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
-  const [page,setPage] = useState<'overview'|'history'>('overview');
+  const [page,setPage] = useState<'overview'|'history'|'catalog'>('overview');
+  const [selected,setSelected] = useState<number[]>([]);
   const [initial,setInitial] = useState<Workout>();
   const [notice,setNotice] = useState('');
   const [busy,setBusy] = useState(false);
@@ -98,7 +100,7 @@ function App() {
       .finally(() => {if(active)setLoading(false)});
     return () => {active=false};
   },[revision]);
-  function navigate(target: 'overview'|'history') {
+  function navigate(target: typeof page) {
     setEditor(false); setPage(target); setNotice('');
   }
   function edit(row?: Workout) {
@@ -117,16 +119,18 @@ function App() {
   return <div className="shell"><aside><b className="brand">FORMA</b><nav>
     <button aria-current={!editor && page==='overview' ? 'page' : undefined} onClick={() => navigate('overview')}>Обзор</button>
     <button aria-current={!editor && page==='history' ? 'page' : undefined} onClick={() => navigate('history')}>Журнал тренировок</button>
+    <button aria-current={!editor && page==='catalog' ? 'page' : undefined} onClick={() => navigate('catalog')}>Упражнения</button>
     </nav><small>Локальный профиль</small></aside><main>
-    {editor ? <Editor catalog={catalog} initial={initial} onClose={() => navigate('history')} onSave={id => {
+    {editor ? <Editor catalog={catalog} initial={initial} selected={page==='catalog' ? selected : []} onClose={() => navigate(page)} onSave={id => {
+      if(page==='catalog') setSelected([]);
       setSaved(id);setEditor(false);setPage('history');setNotice('Тренировка сохранена.');reload(n => n+1)}}/> :
-      <><div className="line hero"><div><h1>{page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
-      <p>{page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
-      <button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button></div>
+      <><div className="line hero"><div><h1>{page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
+      <p>{page==='catalog' ? 'Выберите упражнения для своей тренировки' : page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
+      {page!=='catalog' && <button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button>}</div>
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='overview' ? <Overview history={history} catalog={catalog} month={today().slice(0,7)}
+         {page==='catalog' ? <Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/> : page==='overview' ? <Overview history={history} catalog={catalog} month={today().slice(0,7)}
           openJournal={id => {setSaved(id);navigate('history')}}/> : <>{!history.length && <section className="card"><h2>Пока нет тренировок</h2><p>Добавьте первую тренировку, чтобы записать упражнения и подходы.</p></section>}
         {history.map(w => <details className="card" key={w.id} open={saved===w.id || undefined}><summary>
           <span className="date">{new Date(w.workout_date+'T12:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</span>
