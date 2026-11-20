@@ -130,3 +130,11 @@ h2 {font-size:18px}h3{font-size:15px}
 .primary{background:#2b9664;border-color:#2b9664}nav button{white-space:nowrap}.entry-layout .meta input{border:0;border-bottom:1px solid #dce4dd;border-radius:0}
 @media(max-width:650px){nav button{white-space:normal;font-size:9px}.personal-fields{gap:10px}}
 .period{display:flex;gap:6px;margin-left:auto}.period button{border-radius:18px;padding:.4rem 1rem}.period button[aria-pressed=true]{background:#d8efdf}.history-filter{display:flex;align-items:center;justify-content:space-between;gap:16px}.history-filter input{max-width:280px}
+
+.exercise-picker {position:relative}
+.exercise-options {position:absolute;z-index:4;inset-inline:0;top:100%;background:white;border:1px solid #a5baae;border-radius:.55rem;box-shadow:0 .3rem .8rem #16382c21}
+.exercise-options ul {list-style:none;margin:0;padding:0;max-height:14rem;overflow:auto}
+.exercise-options li,.exercise-options p {margin:0;padding:.55rem .9rem}
+.exercise-options li {cursor:pointer}
+.exercise-options li.active,.exercise-options li:hover {background:#e8f4ec}
+.exercise-options li[aria-selected=true] {font-weight:700}

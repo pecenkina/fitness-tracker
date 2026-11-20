@@ -2,7 +2,7 @@ import {useState} from 'react';
 import type {Exercise} from './main';
 
 const levels = {beginner:'Начальный', intermediate:'Средний', advanced:'Продвинутый'};
-const normalize = (value: string) => value.trim().toLocaleLowerCase('ru-RU').replaceAll('ё','е');
+export const normalize = (value: string) => value.trim().toLocaleLowerCase('ru-RU').replaceAll('ё','е');
 
 function Filter({label, value, options, onChange}: {
   label:string; value:string; options:string[]; onChange:(value:string)=>void;

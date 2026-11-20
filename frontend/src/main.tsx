@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {Profile,Recommendations,type ProfileData} from './personal';
 import {Calendar} from './calendar';
 import {CustomExercise} from './custom';
+import {ExercisePicker} from './exercise-picker';
 import {Catalog} from './catalog';
 import {Overview} from './overview';
 import './style.css';
@@ -76,8 +77,7 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
     <div className="line"><h2>Упражнения</h2><span>{moves.length} упр. · {allSets.length} подх.</span></div>
     {moves.map((move, index) => <section className="card" key={move.key}>
       <div className="line"><h2>{catalog.find(e=>String(e.id)===move.id)?.name || "Упражнение "+(index+1)}</h2>{moves.length > 1 && <button type="button" className="link" onClick={() => setMoves(moves.filter(m => m.key !== move.key))}>Убрать упражнение</button>}</div>
-      <label>Из каталога<select value={move.id} onChange={e => change({...move,id:e.target.value})}>
-        {catalog.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <ExercisePicker catalog={catalog} value={move.id} onChange={id => change({...move, id})}/>
       <div className="set-head"><span>Подход</span><span>Вес</span><span>Повторы</span>{mode==='workout' && <span>Готово</span>}</div>
       {move.sets.map((set, i) => {
         function field(key: 'reps'|'weight', value: string) {
