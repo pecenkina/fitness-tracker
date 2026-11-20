@@ -91,3 +91,53 @@ export function localJournal(db) {
   router.put('/:id', parse, save);
   return router;
 }
+
+export function localPlans(db) {
+  const router = express.Router();
+  router.get('/', async (_req, res) => {
+    const result = await db.query(`SELECT p.id, p.name,
+      (SELECT json_agg(json_build_object('exercise_id', e.id, 'name', e.name, 'sets',
+        (SELECT json_agg(json_build_object('reps', s.reps, 'weight_kg', s.weight_kg) ORDER BY s.position)
+         FROM plan_sets s WHERE s.plan_exercise_id=pe.id)) ORDER BY pe.position)
+       FROM plan_exercises pe JOIN exercises e ON e.id=pe.exercise_id WHERE pe.plan_id=p.id) AS exercises
+      FROM plans p JOIN users u ON u.id=p.user_id WHERE u.email=$1 AND u.password_hash=$2
+      ORDER BY p.id DESC`, [profile, marker]);
+    res.set('Cache-Control','no-store').json(result.rows);
+  });
+
+  router.post('/', express.json(), async (req, res) => {
+    const {workout_id, name} = req.body ?? {};
+    if (!positive(workout_id) || typeof name !== 'string' || !name.trim() || name.length > 120) {
+      return res.status(400).json({error:'Укажите тренировку и название плана до 120 символов.'});
+    }
+    // All reads use one snapshot, including sets from a concurrently edited workout.
+    const copy = await db.query(`WITH source AS (
+        SELECT w.id,w.user_id FROM workouts w JOIN users u ON u.id=w.user_id
+        WHERE w.id=$1 AND u.email=$2 AND u.password_hash=$3 AND w.status='completed'
+      ), plan AS (
+        INSERT INTO plans(user_id,name) SELECT user_id,$4 FROM source RETURNING id
+      ), moves AS (
+        SELECT we.* FROM workout_exercises we JOIN source ON source.id=we.workout_id
+      ), copied AS (
+        INSERT INTO plan_exercises(plan_id,exercise_id,position)
+        SELECT plan.id,m.exercise_id,m.position FROM plan CROSS JOIN moves m RETURNING id,position
+      ), copied_sets AS (
+        INSERT INTO plan_sets(plan_exercise_id,position,reps,weight_kg)
+        SELECT c.id,s.position,s.reps,s.weight_kg FROM copied c JOIN moves m USING(position)
+        JOIN workout_sets s ON s.workout_exercise_id=m.id
+      ) SELECT id FROM plan`, [workout_id,profile,marker,name.trim()]);
+    if (!copy.rowCount) return res.status(404).json({error:'Тренировка не найдена'});
+    res.status(201).json(copy.rows[0]);
+  });
+
+  router.delete('/:id', async (req,res) => {
+    if (!/^[1-9]\d*$/.test(req.params.id) || !positive(Number(req.params.id))) {
+      return res.status(400).json({error:'Некорректный номер плана'});
+    }
+    const result=await db.query(`DELETE FROM plans p USING users u WHERE p.user_id=u.id
+      AND u.email=$1 AND u.password_hash=$2 AND p.id=$3`,[profile,marker,req.params.id]);
+    if (!result.rowCount) return res.status(404).json({error:'План не найден'});
+    res.sendStatus(204);
+  });
+  return router;
+}

@@ -7,6 +7,7 @@ import './style.css';
 export type Exercise = {id: number; name: string; description: string; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
 export type Workout = {id: number; name: string; workout_date: string; duration_minutes: number | null;
   exercises: {name: string; exercise_id: number; sets: {reps: number; weight_kg: number | null}[]}[]};
+type Plan = Pick<Workout,'id'|'name'|'exercises'>;
 type DraftSet = {key: number; reps: string; weight: string};
 type DraftMove = {key: number; id: string; sets: DraftSet[]};
 let nextKey = 0;
@@ -30,8 +31,9 @@ function today() {
   return [now.getFullYear(), String(now.getMonth()+1).padStart(2,'0'), String(now.getDate()).padStart(2,'0')].join('-');
 }
 
-function Editor({catalog, initial, selected, onClose, onSave}: {selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number) => void}) {
-  const [moves, setMoves] = useState<DraftMove[]>(() => initial ? initial.exercises.map(m => ({key: ++nextKey, id: String(m.exercise_id),
+function Editor({catalog, initial, template, selected, onClose, onSave}: {template?: Plan; selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number) => void}) {
+  const source = initial ?? template;
+  const [moves, setMoves] = useState<DraftMove[]>(() => source ? source.exercises.map(m => ({key: ++nextKey, id: String(m.exercise_id),
     sets: m.sets.map(s => ({key: ++nextKey, reps: String(s.reps), weight: String(s.weight_kg ?? '')}))})) : (selected.length ? selected : [catalog[0].id]).map(id => newMove(String(id))));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -53,7 +55,7 @@ function Editor({catalog, initial, selected, onClose, onSave}: {selected: number
   return <form onSubmit={submit}><fieldset disabled={saving} className="plain">
     <button type="button" className="link" onClick={onClose}>← Назад</button>
     <h1>{initial ? 'Редактирование тренировки' : 'Новая тренировка'}</h1>
-    <section className="card meta"><label>Название<input name="name" defaultValue={initial?.name} required maxLength={120} placeholder="Например, силовая на ноги"/></label>
+    <section className="card meta"><label>Название<input name="name" defaultValue={source?.name} required maxLength={120} placeholder="Например, силовая на ноги"/></label>
       <label>Дата<input type="date" name="date" required defaultValue={initial?.workout_date ?? today()}/></label>
       <label>Длительность, мин<input type="number" min="1" name="duration" defaultValue={initial?.duration_minutes ?? ''} placeholder="По желанию"/></label></section>
     {moves.map((move, index) => <section className="card" key={move.key}>
@@ -82,7 +84,9 @@ function App() {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
-  const [page,setPage] = useState<'overview'|'history'|'catalog'>('overview');
+  const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'>('overview');
+  const [plans,setPlans] = useState<Plan[]>([]);
+  const [template,setTemplate] = useState<Plan>();
   const [selected,setSelected] = useState<number[]>([]);
   const [initial,setInitial] = useState<Workout>();
   const [notice,setNotice] = useState('');
@@ -94,8 +98,8 @@ function App() {
   useEffect(() => {
     let active = true;
     setLoading(true); setError('');
-    Promise.all([request<Exercise[]>('/api/exercises'),request<Workout[]>(journal)])
-      .then(([items,rows]) => {if(active){setCatalog(items);setHistory(rows)}})
+    Promise.all([request<Exercise[]>('/api/exercises'),request<Workout[]>(journal),request<Plan[]>('/api/local/plans')])
+      .then(([items,rows,templates]) => {if(active){setCatalog(items);setHistory(rows);setPlans(templates)}})
       .catch(err => {if(active)setError(message(err))})
       .finally(() => {if(active)setLoading(false)});
     return () => {active=false};
@@ -103,8 +107,29 @@ function App() {
   function navigate(target: typeof page) {
     setEditor(false); setPage(target); setNotice('');
   }
-  function edit(row?: Workout) {
+  function edit(row?: Workout, plan?: Plan) {
+    setTemplate(plan);
     setInitial(row); setEditor(true); setNotice('');
+  }
+  async function savePlan(workout: Workout) {
+    const name=window.prompt('Название плана',workout.name);
+    if (name===null) return;
+    setBusy(true);
+    try {
+      await request('/api/local/plans',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,workout_id:workout.id})});
+      navigate('plans');setNotice('План сохранён.');reload(n=>n+1);
+    } catch (err) {setNotice(message(err))}
+    finally {setBusy(false)}
+  }
+  async function deletePlan(plan: Plan) {
+    if (!window.confirm('Удалить план «'+plan.name+'»? Записанные тренировки сохранятся.')) return;
+    setBusy(true);
+    try {
+      await request('/api/local/plans/'+plan.id,{method:'DELETE'});
+      setPlans(items=>items.filter(item=>item.id!==plan.id));setNotice('План удалён.');
+    } catch (err) {setNotice(message(err))}
+    finally {setBusy(false)}
   }
   async function remove(row: Workout) {
     if (!window.confirm('Удалить тренировку «'+row.name+'» вместе со всеми подходами?')) return;
@@ -120,24 +145,33 @@ function App() {
     <button aria-current={!editor && page==='overview' ? 'page' : undefined} onClick={() => navigate('overview')}>Обзор</button>
     <button aria-current={!editor && page==='history' ? 'page' : undefined} onClick={() => navigate('history')}>Журнал тренировок</button>
     <button aria-current={!editor && page==='catalog' ? 'page' : undefined} onClick={() => navigate('catalog')}>Упражнения</button>
+    <button aria-current={!editor && page==='plans' ? 'page' : undefined} onClick={()=>navigate('plans')}>Мои планы</button>
     </nav><small>Локальный профиль</small></aside><main>
-    {editor ? <Editor catalog={catalog} initial={initial} selected={page==='catalog' ? selected : []} onClose={() => navigate(page)} onSave={id => {
+    {editor ? <Editor template={template} catalog={catalog} initial={initial} selected={page==='catalog' ? selected : []} onClose={() => navigate(page)} onSave={id => {
       if(page==='catalog') setSelected([]);
       setSaved(id);setEditor(false);setPage('history');setNotice('Тренировка сохранена.');reload(n => n+1)}}/> :
-      <><div className="line hero"><div><h1>{page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
-      <p>{page==='catalog' ? 'Выберите упражнения для своей тренировки' : page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
-      {page!=='catalog' && <button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button>}</div>
+      <><div className="line hero"><div><h1>{page==='plans' ? 'Мои планы' : page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
+      <p>{page==='plans' ? 'Шаблоны для повторяющихся тренировок' : page==='catalog' ? 'Выберите упражнения для своей тренировки' : page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
+      {page!=='catalog' && page!=='plans' && <button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button>}</div>
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='catalog' ? <Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/> : page==='overview' ? <Overview history={history} catalog={catalog} month={today().slice(0,7)}
+         {page==='plans' ? <>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
+           <p>Раскройте тренировку в журнале и выберите «Сохранить как план».</p>
+           <button onClick={()=>navigate('history')}>Открыть журнал</button></section>}
+           {plans.map(plan=><section className="card" key={plan.id}><h2>{plan.name}</h2>
+             {plan.exercises.map((move,i)=><div className="record" key={i}><b>{move.name}</b>
+             <ol>{move.sets.map((set,j)=><li key={j}>{set.reps} повт. · {set.weight_kg===null?'вес не указан':set.weight_kg+' кг'}</li>)}</ol></div>)}
+             <div className="record-actions"><button className="primary" disabled={busy} onClick={()=>edit(undefined,plan)}>Начать тренировку</button>
+             <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</> :
+           page==='catalog' ? <Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/> : page==='overview' ? <Overview history={history} catalog={catalog} month={today().slice(0,7)}
           openJournal={id => {setSaved(id);navigate('history')}}/> : <>{!history.length && <section className="card"><h2>Пока нет тренировок</h2><p>Добавьте первую тренировку, чтобы записать упражнения и подходы.</p></section>}
         {history.map(w => <details className="card" key={w.id} open={saved===w.id || undefined}><summary>
           <span className="date">{new Date(w.workout_date+'T12:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</span>
           <strong>{w.name}</strong><span>Упражнений: {w.exercises.length}{w.duration_minutes && ' · '+w.duration_minutes+' мин'}</span></summary>
           {w.exercises.map((m,i) => <section key={i} className="record"><h3>{m.name}</h3><ol>{m.sets.map((s,j) =>
             <li key={j}>{s.reps} повт. · {s.weight_kg === null ? 'вес не указан' : s.weight_kg === 0 ? 'свой вес' : s.weight_kg+' кг'}</li>)}</ol></section>)}
-        <div className="record-actions"><button disabled={busy} onClick={() => edit(w)}>Изменить</button>
+        <div className="record-actions"><button disabled={busy} onClick={()=>savePlan(w)}>Сохранить как план</button><button disabled={busy} onClick={() => edit(w)}>Изменить</button>
           <button disabled={busy} className="danger" onClick={() => remove(w)}>Удалить</button></div>
         </details>)}</>}</>}</>}
   </main></div>;
