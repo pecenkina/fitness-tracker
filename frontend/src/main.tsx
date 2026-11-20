@@ -94,7 +94,7 @@ function App() {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
-  const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'|'calendar'>('overview');
+  const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'>('overview');
   const [mode,setMode]=useState<Mode>('workout');
   const [day,setDay]=useState(today);
   const [schedule,setSchedule]=useState<Workout[]>([]);
@@ -161,20 +161,18 @@ function App() {
     <button aria-current={!editor && page==='history' ? 'page' : undefined} onClick={() => navigate('history')}>Журнал тренировок</button>
     <button aria-current={!editor && page==='catalog' ? 'page' : undefined} onClick={() => navigate('catalog')}>Упражнения</button>
     <button aria-current={!editor && page==='plans' ? 'page' : undefined} onClick={()=>navigate('plans')}>Мои планы</button>
-    <button aria-current={!editor && page==='calendar'?'page':undefined} onClick={()=>navigate('calendar')}>Календарь</button>
     </nav><small>Локальный профиль</small></aside><main>
     {editor ? <Editor mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
       if(target==='schedule') setDay(date);
       if(page==='catalog') setSelected([]);
-      setSaved(id);setEditor(false);setPage(target==='plan'?'plans':target==='schedule'?'calendar':'history');setNotice(target==='plan'?'План сохранён.':target==='schedule'?'Занятие запланировано.':'Тренировка сохранена.');reload(n => n+1)}}/> :
-      <><div className="line hero"><div><h1>{page==='calendar'?'Календарь':page==='plans' ? 'Мои планы' : page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
-      <p>{page==='calendar'?'Запланированные занятия':page==='plans' ? 'Шаблоны для повторяющихся тренировок' : page==='catalog' ? 'Выберите упражнения для своей тренировки' : page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
+      setSaved(id);setEditor(false);setPage(target==='workout'?'history':'plans');setNotice(target==='plan'?'План сохранён.':target==='schedule'?'Занятие запланировано.':'Тренировка сохранена.');reload(n => n+1)}}/> :
+      <><div className="line hero"><div><h1>{page==='plans' ? 'Мои планы' : page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
+      <p>{page==='plans' ? 'Шаблоны для повторяющихся тренировок' : page==='catalog' ? 'Выберите упражнения для своей тренировки' : page==='overview' ? 'Статистика за текущий месяц' : 'История занятий и подходов'}</p></div>
       {(page==='overview' || page==='history') && <button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button>}</div>
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='calendar' ? <Calendar canSchedule={catalog.length>0} day={day} select={setDay} entries={schedule} plans={plans} onStart={row=>edit(row)} onCancel={remove}
-          onSchedule={id=>edit(undefined,plans.find(p=>p.id===id),'schedule')}/> : page==='plans' ? <><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
+         {page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
            <p>Раскройте тренировку в журнале и выберите «Сохранить как план».</p>
            <button onClick={()=>navigate('history')}>Открыть журнал</button></section>}
            {plans.map(plan=><section className="card" key={plan.id}><h2>{plan.name}</h2>
@@ -182,7 +180,8 @@ function App() {
              <ol>{move.sets.map((set,j)=><li key={j}>{set.reps} повт. · {set.weight_kg===null?'вес не указан':set.weight_kg+' кг'}</li>)}</ol></div>)}
              <div className="record-actions"><button className="primary" disabled={busy} onClick={()=>edit(undefined,plan)}>Начать тренировку</button>
              <button onClick={()=>edit(undefined,plan,'plan')}>Изменить план</button>
-             <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</> :
+             <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</section><Calendar canSchedule={catalog.length>0} day={day} select={setDay} entries={schedule} plans={plans} onStart={row=>edit(row)} onCancel={remove}
+          onSchedule={id=>edit(undefined,plans.find(p=>p.id===id),'schedule')}/></div> :
            page==='catalog' ? <><CustomExercise muscles={[...new Set(catalog.flatMap(e=>e.muscles))]} saved={()=>{setNotice('Упражнение добавлено.');reload(n=>n+1)}}/><Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/></> : page==='overview' ? <Overview history={history} catalog={catalog} month={today().slice(0,7)}
           openJournal={id => {setSaved(id);navigate('history')}}/> : <>{!history.length && <section className="card"><h2>Пока нет тренировок</h2><p>Добавьте первую тренировку, чтобы записать упражнения и подходы.</p></section>}
         {history.map(w => <details className="card" key={w.id} open={saved===w.id || undefined}><summary>
