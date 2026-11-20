@@ -31,6 +31,7 @@ export function Overview({history,catalog,month,openJournal}: {history: Workout[
   for(const workout of rows) {
     if(workout.duration_minutes!==null) minutes=(minutes??0)+workout.duration_minutes;
     for(const move of workout.exercises) {
+      if(move.completed===false) continue;
       const groups=muscles.get(move.exercise_id);
       const targets=groups?.length ? groups : ['Не указано'];
       for(const set of move.sets) {

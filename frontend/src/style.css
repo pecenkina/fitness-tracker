@@ -80,3 +80,4 @@ h2 {font-size:1.12rem;line-height:1.35}
 .exercise-card button {margin-top:auto}
 @media(max-width:650px){nav{flex-wrap:wrap}.catalog-filters{grid-template-columns:1fr 1fr}.catalog-filters label:first-child{grid-column:1/-1}}
 .record-actions {flex-wrap:wrap}
+.tick {display:flex;align-items:center;gap:.6rem;margin:.8rem 0}.tick input{width:1.2rem;height:1.2rem;accent-color:#286443}.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:1rem 0}.month b{text-align:center}.month button{padding:.6rem .2rem;position:relative}.month button[aria-pressed=true]{background:#214736;color:white}.month small{display:inline-block;background:#d6eadc;color:#214736;border-radius:1rem;padding:0 .3rem;margin-left:2px}

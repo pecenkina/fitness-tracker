@@ -1,7 +1,7 @@
 import express from 'express';
 import pg from 'pg';
 import {fileURLToPath} from 'node:url';
-import {localJournal, localPlans} from './journal.mjs';
+import {localJournal, localPlans, customExercises} from './journal.mjs';
 import {localizeExercise} from './catalog/exercisedb-ru.mjs';
 
 const db = new pg.Pool({connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 4000});
@@ -10,6 +10,7 @@ const app = express();
 if (process.argv.includes('--local-journal')) {
   app.use('/api/local/workouts', localJournal(db));
   app.use('/api/local/plans', localPlans(db));
+  app.use('/api/local/exercises', customExercises(db));
   app.use(express.static(fileURLToPath(new URL('../frontend/dist/', import.meta.url))));
 }
 const fields = `SELECT e.id, e.name, e.description, e.difficulty, e.equipment, e.goals,
