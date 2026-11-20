@@ -89,7 +89,12 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
     <div className="entry-layout"><div>    <section className="card meta"><label>Название<input name="name" value={title} onChange={e=>setTitle(e.target.value)} required maxLength={120} placeholder="Например, силовая на ноги"/></label>
       {mode!=='plan' && <><label>Дата<input type="date" name="date" required defaultValue={initial?.workout_date ?? day}/></label>
       <label>Длительность, мин<input type="number" min="1" name="duration" value={duration} onChange={e=>setDuration(e.target.value)} placeholder="По желанию"/></label></>}</section>
-    <div className="line"><h2>Упражнения</h2><span>{moves.length} упр. · {allSets.length} подх.</span></div>
+    <div className="line"><h2>Упражнения</h2><span>{moves.length} упр. · {allSets.length} подх.</span>
+      {mode === 'workout' && <button type="button" disabled={counted.length === allSets.length}
+        onClick={() => setMoves(items => items.map(move => ({
+          ...move, sets: move.sets.map(set => ({...set, completed: true}))
+        })))}>Отметить все подходы выполненными</button>}
+    </div>
     {moves.map((move, index) => {
       const exercise = exerciseById.get(move.id);
       const weightLabel = usesCounterweight(exercise) ? 'Противовес' : 'Вес';
