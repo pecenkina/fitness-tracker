@@ -20,6 +20,10 @@ export function Calendar({canSchedule,day,select,entries,plans,onSchedule,onStar
   const week=entries.filter(w=>w.workout_date>=dateKey(monday) && w.workout_date<=dateKey(sunday))
     .sort((a,b)=>a.workout_date.localeCompare(b.workout_date) || a.id-b.id);
   return <section className="card plan-calendar" aria-label="Календарь тренировок"><h2>На этой неделе</h2>
+    <div className="week-strip">{Array.from({length:7},(_,i)=>{
+      const d=new Date(monday); d.setDate(d.getDate()+i); const k=dateKey(d);
+      return <button key={k} aria-label={k} aria-pressed={k===day} onClick={()=>select(k)}><small>{d.toLocaleDateString('ru-RU',{weekday:'short'})}</small><b>{d.getDate()}</b></button>;
+    })}</div>
     {week.map(w=><button className="week-entry" key={w.id} onClick={()=>select(w.workout_date)}>
       <strong>{w.name}</strong><span>{new Date(w.workout_date+'T12:00').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'short'})}</span>
     </button>)}

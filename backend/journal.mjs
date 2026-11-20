@@ -14,7 +14,7 @@ function validWorkout(value, plan) {
   if (value.duration_minutes != null && !positive(value.duration_minutes)) return false;
   return Array.isArray(value.exercises) && value.exercises.length > 0 && value.exercises.length <= 50 &&
     value.exercises.every(e => e && (e.completed === undefined || typeof e.completed === 'boolean') && positive(e.exercise_id) && Array.isArray(e.sets) &&
-      e.sets.length > 0 && e.sets.length <= 50 && e.sets.every(s => s && positive(s.reps) &&
+      e.sets.length > 0 && e.sets.length <= 50 && e.sets.every(s => s && (s.completed === undefined || typeof s.completed === 'boolean') && positive(s.reps) &&
         (s.weight_kg === null || (typeof s.weight_kg === 'number' && s.weight_kg >= 0 &&
           s.weight_kg < 100000 && /^\d+(\.\d{1,2})?$/.test(String(s.weight_kg))))));
 }
@@ -26,7 +26,7 @@ export function localJournal(db) {
       SELECT w.id, w.name, to_char(w.workout_date, 'YYYY-MM-DD') AS workout_date, w.duration_minutes, w.status,
         COALESCE((SELECT json_agg(json_build_object(
           'completed', we.completed, 'name', e.name, 'exercise_id', e.id, 'sets', (SELECT json_agg(json_build_object(
-            'reps', s.reps, 'weight_kg', s.weight_kg) ORDER BY s.position)
+            'reps', s.reps, 'weight_kg', s.weight_kg, 'completed', s.completed) ORDER BY s.position)
             FROM workout_sets s WHERE s.workout_exercise_id = we.id)) ORDER BY we.position)
           FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
           WHERE we.workout_id = w.id), '[]'::json) AS exercises
@@ -156,14 +156,15 @@ function saveEntry(db, plan) {
 }
 async function writeExercises(client,id,exercises,plan) {
   for (const [i, e] of exercises.entries()) {
+    const sets=e.sets.map(s=>({...s,completed:s.completed ?? e.completed ?? true}));
     const params=[id,e.exercise_id,i+1];
     const move=plan
       ? await client.query('INSERT INTO plan_exercises(plan_id,exercise_id,position) VALUES ($1,$2,$3) RETURNING id',params)
-      : await client.query('INSERT INTO workout_exercises(workout_id,exercise_id,position,completed) VALUES ($1,$2,$3,$4) RETURNING id',[...params,e.completed ?? true]);
+      : await client.query('INSERT INTO workout_exercises(workout_id,exercise_id,position,completed) VALUES ($1,$2,$3,$4) RETURNING id',[...params,sets.some(s=>s.completed)]);
     const table=plan ? 'plan' : 'workout';
-    await client.query(`INSERT INTO ${table}_sets(${table}_exercise_id,position,reps,weight_kg)
-      SELECT $1, ord, (s->>'reps')::integer, (s->>'weight_kg')::numeric
-      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(s,ord)`,[move.rows[0].id,JSON.stringify(e.sets)]);
+    await client.query(`INSERT INTO ${table}_sets(${table}_exercise_id,position,reps,weight_kg${plan?'':',completed'})
+      SELECT $1, ord, (s->>'reps')::integer, (s->>'weight_kg')::numeric${plan?'':", (s->>'completed')::boolean"}
+      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS a(s,ord)`,[move.rows[0].id,JSON.stringify(sets)]);
   }
 }
 
@@ -184,6 +185,34 @@ export function customExercises(db) {
       name.trim().toLocaleLowerCase('ru').replaceAll('ё','е'),muscle]);
     if (!result.rowCount) return res.status(409).json({error:'Своё упражнение с таким названием уже есть.'});
     res.status(201).json(result.rows[0]);
+  });
+  return router;
+}
+
+export function localProfile(db) {
+  const router=express.Router();
+  router.get('/',async (_req,res)=>{
+    const result=await db.query(`SELECT display_name, weight_kg, height_cm, to_char(birth_date,'YYYY-MM-DD') AS birth_date,
+      gender, goal FROM users WHERE email=$1 AND password_hash=$2`,[profile,marker]);
+    res.json(result.rows[0] ?? {});
+  });
+  router.put('/',express.json(),async (req,res)=>{
+    const {display_name,weight_kg,height_cm,birth_date,gender,goal}=req.body ?? {};
+    if ([display_name,gender,goal,birth_date].some(v=>typeof v!=='string' || v.length>120) ||
+      [weight_kg,height_cm].some(v=>v!==null && !(typeof v==='number' && v>0 && v<1000)) ||
+      (birth_date && !/^\d{4}-\d{2}-\d{2}$/.test(birth_date))) return res.status(400).json({error:'Проверьте поля профиля.'});
+    try {
+      const result=await db.query(`INSERT INTO users(email,password_hash,display_name,weight_kg,height_cm,birth_date,gender,goal)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (lower(email)) DO UPDATE SET display_name=excluded.display_name,
+        weight_kg=excluded.weight_kg,height_cm=excluded.height_cm,birth_date=excluded.birth_date,gender=excluded.gender,
+        goal=excluded.goal WHERE users.password_hash=$2 RETURNING id`,
+        [profile,marker,display_name.trim(),weight_kg,height_cm,birth_date||null,gender,goal]);
+      if (!result.rowCount) return res.status(409).json({error:'Локальный профиль недоступен.'});
+      res.sendStatus(204);
+    } catch(error) {
+      if(error.code==='22008') return res.status(400).json({error:'Проверьте дату рождения.'});
+      throw error;
+    }
   });
   return router;
 }

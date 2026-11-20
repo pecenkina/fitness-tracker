@@ -8,7 +8,7 @@ const dayLabel = (date: string) => new Date(date+'T12:00').toLocaleDateString('r
 function Trend({points}: {points: [string,number][]}) {
   if (!points.length) return <p className="empty">Укажите вес в подходах, чтобы увидеть динамику.</p>;
   const peak = Math.max(1,...points.map(([,kg]) => kg));
-  const day = (date: string) => Number(date.slice(-2));
+  const day = (date: string) => Date.parse(date+'T00:00Z')/86400000;
   const first = day(points[0][0]), last = day(points[points.length-1][0]);
   const x = (date: string) => first === last ? 172 : 40+(day(date)-first)/(last-first)*270;
   const y = (kg: number) => 120-kg/peak*90;
@@ -21,9 +21,12 @@ function Trend({points}: {points: [string,number][]}) {
     {last!==first && <text x="310" y="141" textAnchor="middle">{dayLabel(points[points.length-1][0])}</text>}</svg></>;
 }
 
-export function Overview({history,catalog,month,openJournal}: {history: Workout[]; catalog: Exercise[]; month: string; openJournal: (id?: number)=>void}) {
+export function Overview({history,catalog,month,period,openJournal}: {period:string; history: Workout[]; catalog: Exercise[]; month: string; openJournal: (id?: number)=>void}) {
   const [choice,setChoice] = useState('');
-  const rows=history.filter(w=>w.workout_date.startsWith(month));
+  const end=new Date();const start=new Date(end);
+  start.setDate(start.getDate()-(period==='7'?6:period==='30'?29:364));
+  const rows=history.filter(w=>period==='month' ? w.workout_date.startsWith(month) :
+    w.workout_date>=start.toLocaleDateString('sv-SE') && w.workout_date<=end.toLocaleDateString('sv-SE'));
   const muscleVolumes = new Map<string,number>();
   const maxima = new Map<number, Map<string,number>>();
   let minutes: number|null=null, volume: number|null=null, maxKg: number|null=null;
@@ -35,7 +38,7 @@ export function Overview({history,catalog,month,openJournal}: {history: Workout[
       const groups=muscles.get(move.exercise_id);
       const targets=groups?.length ? groups : ['Не указано'];
       for(const set of move.sets) {
-        if(set.weight_kg===null) continue;
+        if(set.completed===false || set.weight_kg===null) continue;
         const kg=set.weight_kg, work=kg*set.reps;
         volume=(volume??0)+work;
         maxKg=Math.max(maxKg??0,kg);
@@ -66,7 +69,7 @@ export function Overview({history,catalog,month,openJournal}: {history: Workout[
     <section className="card"><div className="line"><h2>Последние тренировки</h2><button className="link" onClick={()=>openJournal()}>Все записи →</button></div>
       {history.slice(0,3).map(w=><button key={w.id} className="data-row" onClick={()=>openJournal(w.id)}><b>{w.name}</b><span>{dayLabel(w.workout_date)} →</span></button>)}
       {!history.length && <p className="empty">Здесь появится первая сохранённая тренировка.</p>}</section>
-    <section className="card"><h2>Топ упражнений</h2><p className="muted">По максимальному весу за месяц</p>
+    <section className="card"><h2>Топ упражнений</h2><p className="muted">По максимальному весу за период</p>
       {top.map(e=><div className="data-row" key={e.name}><span>{e.name}</span><b>{format(e.kg)} кг</b></div>)}
       {!top.length && <p className="empty">Пока нет подходов с указанным весом.</p>}</section></div></>;
 }

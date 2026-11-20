@@ -92,3 +92,41 @@ h2 {font-size:1.12rem;line-height:1.35}
 .plan-calendar .data-row button {font-size:.85rem;padding:.4rem}
 .plan-calendar>.primary {margin-top:.75rem}
 @media(max-width:860px){.plans-layout{grid-template-columns:minmax(0,1fr)}}
+
+/* Desktop measurements from the 1440 px FORMA frames. */
+:root {font-size:14px;line-height:1.45;color:#182b21}
+.shell {grid-template-columns:230px minmax(0,1fr)}
+.shell>aside {padding:26px 14px;gap:0}
+.brand {display:flex;align-items:center;gap:14px;padding:0 12px;font-size:19px;letter-spacing:.03em}
+.brand i {width:38px;height:38px;border-radius:12px;background:#a9edb9 url('/forma/brand.svg') center / 19px no-repeat}
+.nav-label {margin:42px 13px 18px;color:#9eb0a5;text-transform:uppercase;font-size:10px;letter-spacing:.1em}
+nav {gap:11px}nav button {height:43px;display:flex;gap:15px;align-items:center;padding:0 20px;font-size:13px}nav img{width:18px;height:18px}
+main {width:100%;max-width:1440px;padding:32px 38px 60px 40px}
+h1 {font-size:28px;margin:0;font-weight:700;letter-spacing:-.035em}
+h2 {font-size:18px}h3{font-size:15px}
+.hero,.editor-sub {border-bottom:1px solid #dce4dd;padding-bottom:20px;margin-bottom:18px;min-height:78px;align-items:flex-start}
+.hero p,.editor-sub {font-size:13px;color:#607368}
+.entry-toolbar {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0}
+.entry-toolbar h2 {font-size:21px}
+.entry-layout,.dashboard,.plans-layout {display:grid;grid-template-columns:minmax(0,2.04fr) minmax(0,1fr);gap:16px;align-items:start}
+.entry-side>.card:first-child,.entry-layout .meta {margin-top:0}
+.summary-line {display:flex;justify-content:space-between;align-items:center;padding:20px 0;border-bottom:1px solid #e0e8e2}
+.set,.set-head {display:grid;grid-template-columns:minmax(36px,.9fr) minmax(50px,1fr) minmax(50px,1fr) minmax(44px,.9fr) 22px;align-items:center;gap:8px;max-width:580px;margin:6px 0;text-align:center}
+.set-head {font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#586b60;border-top:1px solid #dce4dd;padding:10px 0 0;margin-top:14px}
+.set input {height:34px;text-align:center;background:#fafbfa;padding:4px;border:1px solid #d9e3dc}
+.set .done {width:19px;height:19px;justify-self:center;accent-color:#398758}
+.editor-sub {min-height:0}
+.stats .tile {min-height:124px;background:white}
+.stats .tile strong {font-size:30px}
+.dashboard>.card {min-height:245px}
+.exercise-card::before {content:'';width:100%;height:104px;display:block;border-radius:10px;background:#ebf8f0 url('/forma/catalog.svg') center / 29px no-repeat}
+.exercise-card:nth-child(3n+2)::before {background-color:#f3eeff}.exercise-card:nth-child(3n)::before {background-color:#edf3fa}
+.week-strip {display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:15px 0}
+.week-strip button {min-width:0;padding:7px 0;border:0;background:#f4f7f4;display:grid;gap:3px}
+.week-strip button[aria-pressed=true]{background:#d6efdb}
+@media(max-width:1000px){.shell{grid-template-columns:175px minmax(0,1fr)}main{padding:24px}.dashboard,.plans-layout,.entry-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){.shell{display:block}.shell>aside{padding:0}.brand,.nav-label{display:none}nav{position:fixed;z-index:4;bottom:0;left:0;right:0;background:white;border-top:1px solid #dce4dd;display:flex;gap:0;flex-wrap:nowrap;padding:6px 4px max(7px,env(safe-area-inset-bottom))}nav button,nav button[aria-current=page]{height:55px;flex:1;min-width:0;background:white;color:#496754;font-size:10px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0;text-align:center}nav button[aria-current=page]{background:#ebf8f0}main{padding:24px 18px 90px}.stats .tile{min-height:92px}.set,.set-head{gap:4px}.entry-toolbar{flex-wrap:wrap}.entry-layout .card{padding:14px}.editor-sub{margin-bottom:10px}}
+.personal-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.goal-card{border-radius:16px;background:#244c38;color:white;padding:22px;margin-bottom:20px}.goal-card h2{font-size:28px}.filters-inline{display:flex;gap:8px}
+.primary{background:#2b9664;border-color:#2b9664}nav button{white-space:nowrap}.entry-layout .meta input{border:0;border-bottom:1px solid #dce4dd;border-radius:0}
+@media(max-width:650px){nav button{white-space:normal;font-size:9px}.personal-fields{gap:10px}}
+.period{display:flex;gap:6px;margin-left:auto}.period button{border-radius:18px;padding:.4rem 1rem}.period button[aria-pressed=true]{background:#d8efdf}.history-filter{display:flex;align-items:center;justify-content:space-between;gap:16px}.history-filter input{max-width:280px}
