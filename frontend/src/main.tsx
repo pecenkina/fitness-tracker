@@ -8,8 +8,10 @@ import {Catalog} from './catalog';
 import {usesCounterweight, describeWeight} from './load';
 import {Overview} from './overview';
 import './style.css';
+import {Accounts,Moderation} from './accounts';
+import {api,type Account} from './session';
 
-export type Exercise = {id: number; name: string; description: string; regions:string[]; goals?:string[]; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
+export type Exercise = {source?:string; id: number; name: string; description: string; regions:string[]; goals?:string[]; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
 export type Workout = {id: number; name: string; workout_date: string; status?: string; duration_minutes: number | null;
   exercises: {completed?: boolean; name: string; exercise_id: number; sets: {completed?: boolean; reps: number; weight_kg: number | null}[]}[]};
 type Plan = Pick<Workout,'id'|'name'|'exercises'>;
@@ -23,7 +25,7 @@ const journal = '/api/local/workouts';
 function request(url: string, options: RequestInit & {method: 'DELETE'}): Promise<void>;
 function request<T>(url: string, options?: RequestInit): Promise<T>;
 async function request<T>(url: string, options?: RequestInit): Promise<T | void> {
-  const response = await fetch(url, options);
+  const response = await api(url, options);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || 'Не удалось выполнить запрос. Проверьте подключение к серверу.');
@@ -37,7 +39,7 @@ function today() {
 }
 
 type Mode='workout'|'plan'|'schedule';
-function Editor({mode,day,catalog, onCreateExercise, initial, template, selected, onClose, onSave}: {mode:Mode; day:string; onCreateExercise: (exercise: Exercise) => void; template?: Plan; selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number, mode:Mode, date:string) => void}) {
+function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}: {mode:Mode; day:string; template?: Plan; selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number, mode:Mode, date:string) => void}) {
   const source = initial ?? template;
   const [moves, setMoves] = useState<DraftMove[]>(() => source ? source.exercises.map(m => ({key: ++nextKey, id: String(m.exercise_id),
     sets: m.sets.map(s => ({completed:initial ? s.completed ?? m.completed ?? true : false,key: ++nextKey, reps: String(s.reps), weight: String(s.weight_kg ?? '')}))})) : (selected.length ? selected : [catalog[0].id]).map(id => newMove(String(id))));
@@ -125,10 +127,7 @@ function Editor({mode,day,catalog, onCreateExercise, initial, template, selected
     {mode==='workout' && !initial && <label className="tick"><input type="checkbox" name="save_plan"/>Также сохранить как план</label>}
     <div className="actions"><button type="button" disabled={moves.length >= 50} onClick={() => setMoves([...moves,newMove(String(catalog[0].id))])}>+ Упражнение</button>
 
-      <CustomExercise catalog={catalog} disabled={moves.length >= 50} saved={exercise => {
-        onCreateExercise(exercise);
-        setMoves(items => [...items, newMove(String(exercise.id))]);
-      }}/>
+      <CustomExercise catalog={catalog} disabled={moves.length >= 50}/>
       {mode==='workout' && !initial && <button value="plan">Сохранить только план</button>}</div>
     </div><section className="entry-side"><div className="card"><h2>Сводка тренировки</h2>
     {[['Упражнения',moves.length],['Подходы',mode==='workout'?counted.length+' / '+allSets.length:allSets.length],['Общий объём',volume.toLocaleString('ru-RU')+' кг'],['Длительность',duration?duration+' мин':'—']].map(([k,v])=><div className="summary-line" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div>
@@ -137,10 +136,9 @@ function Editor({mode,day,catalog, onCreateExercise, initial, template, selected
   </fieldset></form>;
 }
 
-function App() {
+function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
-  const addToCatalog = (exercise: Exercise) => setCatalog(items =>
-    [...items, exercise].sort((a,b) => a.name.localeCompare(b.name,'ru')));
+  const [shareUrl,setShareUrl]=useState('');
   const regions = [...new Set(catalog.flatMap(exercise => exercise.regions))].sort((a,b)=>a.localeCompare(b,'ru'));
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
@@ -175,8 +173,32 @@ function App() {
       .finally(() => {if(active)setLoading(false)});
     return () => {active=false};
   },[revision]);
+  useEffect(()=>{
+    let active=true;
+    async function importLink(){
+      if(!location.hash.startsWith('#share='))return;
+      const hash=location.hash;
+      try{
+        const result=await request<{own:boolean;added:boolean}>('/api/local/shares/'+encodeURIComponent(hash.slice(7))+'/import',{method:'POST'});
+        if(!active || hash!==location.hash)return;
+        window.history.replaceState(null,'',location.pathname+location.search);
+        navigate('plans');setDay(today());
+        setNotice(result.own?'Это ссылка на вашу тренировку.':result.added?'Тренировка добавлена в календарь.':'Эту тренировку вы уже добавляли.');
+        reload(n=>n+1);
+      }catch(e){if(active)setNotice(message(e))}
+    }
+    void importLink();window.addEventListener('hashchange',importLink);
+    return ()=>{active=false;window.removeEventListener('hashchange',importLink)};
+  },[]);
+  async function share(id:number){
+    try{
+      const {token}=await request<{token:string}>(journal+'/'+id+'/share',{method:'POST'});
+      const url=new URL(location.href);url.hash='share='+token;setShareUrl(url.href);
+      try{await navigator.clipboard.writeText(url.href);setNotice('Ссылка скопирована.')}catch{setNotice('Скопируйте ссылку для получателя.')}
+    }catch(e){setNotice(message(e))}
+  }
   function navigate(target: typeof page) {
-    setEditor(false); setPage(target); setNotice('');
+    setEditor(false); setPage(target); setShareUrl(''); setNotice('');
   }
   function edit(row?: Workout, plan?: Plan, next:Mode='workout') {
     setMode(next);
@@ -220,9 +242,9 @@ function App() {
     <button aria-current={!editor && page==='catalog' ? 'page' : undefined} onClick={() => navigate('catalog')}><img src="/forma/catalog.svg" alt=""/>Упражнения</button>
     <button aria-current={!editor && page==='recommendations'?'page':undefined} onClick={()=>navigate('recommendations')}><img src="/forma/recommendations.svg" alt=""/>Рекомендации</button>
     <button aria-current={!editor && page==='plans' ? 'page' : undefined} onClick={()=>navigate('plans')}><img src="/forma/plans.svg" alt=""/>Мои планы</button>
-    </nav><small>Локальный профиль</small></aside><main>
+    </nav><small>{user.email}</small></aside><main>
     <div className="profile-access"><button aria-label="Профиль" title="Профиль" aria-current={!editor && page==='profile'?'page':undefined} onClick={()=>navigate('profile')}><img src="/forma/profile.svg" alt=""/></button></div>
-    {editor ? <Editor onCreateExercise={addToCatalog} mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog'||page==='recommendations' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
+    {editor ? <Editor mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog'||page==='recommendations' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
       if(target==='schedule') setDay(date);
       if(target==='workout'){setQuery('');setDateFilter('')}
       if(page==='catalog') setSelected([]);
@@ -230,6 +252,9 @@ function App() {
       <><div className="line hero"><div><h1>{page==='profile'?'Профиль':page==='recommendations'?'Рекомендации':page==='plans' ? 'Мои планы' : page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
       <p>{page==='profile'?'Личные параметры, цели и настройки аккаунта':page==='recommendations'?'Упражнения, подходящие под твою цель':page==='plans' ? 'Шаблоны, по которым удобно начинать тренировку' : page==='catalog' ? 'Найди упражнения по мышцам, сложности и оборудованию' : page==='overview' ? 'Аналитика тренировок и твой прогресс' : 'История занятий, достижения и подробности'}</p></div>
       </div>{(page==='overview' || page==='history') && <div className="entry-toolbar"><h2>{page==='overview'?(period==='month'?'Статистика за месяц':period==='7'?'Статистика за неделю':'Статистика за '+(period==='30'?'30 дней':'год')):'История занятий'}</h2>{page==='overview' && <div className="period">{[['7','7 дней'],['30','30 дней'],['year','Год']].map(([id,label])=><button key={id} aria-pressed={period===id} onClick={()=>setPeriod(period===id?'month':id)}>{label}</button>)}</div>}<button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button></div>}
+      {page==='profile' && <section className="card"><h2>{user.email}</h2><button onClick={()=>choose()}>Сменить аккаунт</button> <button onClick={async()=>{try{await request('/api/auth/logout',{method:'POST'});choose(true)}catch(e){setNotice(message(e))}}}>Выйти</button></section>}
+      {page==='catalog' && user.moderator && <Moderation refresh={()=>reload(n=>n+1)}/>}
+      {shareUrl && <label>Ссылка на тренировку<input readOnly value={shareUrl} onFocus={e=>e.target.select()}/></label>}
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
@@ -246,7 +271,7 @@ function App() {
              <button onClick={()=>edit(undefined,plan,'plan')}>Изменить план</button>
              <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</section><Calendar canSchedule={catalog.length>0} day={day} select={setDay} entries={schedule} plans={plans} onStart={row=>edit(row)} onCancel={remove}
           onSchedule={id=>edit(undefined,plans.find(p=>p.id===id),'schedule')}/></div> :
-           page==='catalog' ? <><CustomExercise catalog={catalog} saved={exercise=>{addToCatalog(exercise);setNotice('Упражнение добавлено.')}}/><Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/></> : page==='overview' ? <Overview period={period} history={history} catalog={catalog} month={today().slice(0,7)}
+           page==='catalog' ? <><CustomExercise catalog={catalog}/><Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/></> : page==='overview' ? <Overview period={period} history={history} catalog={catalog} month={today().slice(0,7)}
           openJournal={id => {setSaved(id);setQuery('');setDateFilter('');navigate('history')}}/> : <><div className="card history-filter"><h2>Все тренировки</h2><input aria-label="Поиск по названию тренировки" type="search" placeholder="Поиск по названию" value={query} onChange={e=>setQuery(e.target.value)}/></div>
         <section className="card"><div className="line"><h2>{weekStart.toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</h2><div><button onClick={()=>shiftWeek(-1)} aria-label="Предыдущая неделя">‹</button> <button onClick={()=>shiftWeek(1)} aria-label="Следующая неделя">›</button></div></div>
         <div className="week-strip">{Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);const key=d.toLocaleDateString('sv-SE');return <button key={key} aria-pressed={key===dateFilter} onClick={()=>setDateFilter(dateFilter===key?'':key)}><small>{d.toLocaleDateString('ru-RU',{weekday:'short'})}</small><b>{d.getDate()}</b></button>})}</div></section>
@@ -258,9 +283,9 @@ function App() {
           <strong>{w.name}</strong><span>Упражнений: {w.exercises.length}{w.duration_minutes && ' · '+w.duration_minutes+' мин'}</span></summary>
           {w.exercises.map((m,i) => <section key={i} className="record"><h3>{m.name}</h3><ol>{m.sets.map((s,j) =>
             <li key={j}>{(s.completed ?? m.completed)===false?'Пропущен':'Выполнен'} · {s.reps} повт. · {describeWeight(s.weight_kg,catalog.find(e=>e.id===m.exercise_id))}</li>)}</ol></section>)}
-        <div className="record-actions"><button disabled={busy} onClick={()=>savePlan(w)}>Сохранить как план</button><button disabled={busy} onClick={() => edit(w)}>Изменить</button>
+        <div className="record-actions"><button onClick={()=>share(w.id)}>Поделиться тренировкой</button><button disabled={busy} onClick={()=>savePlan(w)}>Сохранить как план</button><button disabled={busy} onClick={() => edit(w)}>Изменить</button>
           <button disabled={busy} className="danger" onClick={() => remove(w)}>Удалить</button></div>
         </details>)}</>}</>}</>}
   </main></div>;
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+createRoot(document.getElementById('root')!).render(<Accounts>{(user,choose)=><App key={user.id} user={user} choose={choose}/>}</Accounts>);

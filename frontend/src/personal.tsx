@@ -1,3 +1,4 @@
+import {api} from './session';
 import {useState,type FormEvent} from 'react';
 import {recommend} from './recommendations';
 import type {Exercise, Workout} from './main';
@@ -13,7 +14,7 @@ export function Profile({data,regions,goals,onSave}:{data:ProfileData;regions:st
     const values:Record<string,FormDataEntryValue>={...Object.fromEntries(form),goal:form.getAll('goal').join(',')};
     const profile={...values,weight_kg:values.weight_kg?Number(values.weight_kg):null,height_cm:values.height_cm?Number(values.height_cm):null};
     setBusy(true);setError('');
-    try{const res=await fetch('/api/local/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(profile)});
+    try{const res=await api('/api/local/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(profile)});
       if(!res.ok)throw new Error((await res.json()).error);
       onSave({...data,...values,weight_kg:profile.weight_kg??undefined,height_cm:profile.height_cm??undefined});
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить профиль.')}finally{setBusy(false)}

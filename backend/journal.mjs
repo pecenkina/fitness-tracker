@@ -1,7 +1,5 @@
 import express from 'express';
 
-const profile = 'journal-demo@fitness.invalid';
-const marker = '!local-journal-demo';
 const positive = n => Number.isInteger(n) && n > 0 && n <= 2147483647;
 
 function validWorkout(value, plan) {
@@ -31,8 +29,8 @@ export function localJournal(db) {
           FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
           WHERE we.workout_id = w.id), '[]'::json) AS exercises
       FROM workouts w JOIN users u ON u.id = w.user_id
-      WHERE u.email = $1 AND u.password_hash = $2 AND w.status = $3
-      ORDER BY w.workout_date DESC, w.id DESC`, [profile, marker, req.query.status ?? 'completed']);
+      WHERE u.id = $1 AND w.status = $2
+      ORDER BY w.workout_date DESC, w.id DESC`, [req.account.id, req.query.status ?? 'completed']);
     res.set('Cache-Control', 'no-store').json(result.rows);
   });
 
@@ -42,7 +40,7 @@ export function localJournal(db) {
   });
   router.delete('/:id', async (req, res) => {
     const result = await db.query(`DELETE FROM workouts w USING users u WHERE w.user_id=u.id
-      AND u.email=$1 AND u.password_hash=$2 AND w.id=$3 AND w.status=$4`, [profile, marker, req.params.id,req.query.status ?? 'completed']);
+      AND u.id=$1 AND w.id=$2 AND w.status=$3`, [req.account.id, req.params.id,req.query.status ?? 'completed']);
     if (!result.rowCount) return res.status(404).json({error: 'Тренировка не найдена'});
     res.sendStatus(204);
   });
@@ -55,14 +53,14 @@ export function localJournal(db) {
 
 export function localPlans(db) {
   const router = express.Router();
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
     const result = await db.query(`SELECT p.id, p.name,
       (SELECT json_agg(json_build_object('exercise_id', e.id, 'name', e.name, 'sets',
         (SELECT json_agg(json_build_object('reps', s.reps, 'weight_kg', s.weight_kg) ORDER BY s.position)
          FROM plan_sets s WHERE s.plan_exercise_id=pe.id)) ORDER BY pe.position)
        FROM plan_exercises pe JOIN exercises e ON e.id=pe.exercise_id WHERE pe.plan_id=p.id) AS exercises
-      FROM plans p JOIN users u ON u.id=p.user_id WHERE u.email=$1 AND u.password_hash=$2
-      ORDER BY p.id DESC`, [profile, marker]);
+      FROM plans p JOIN users u ON u.id=p.user_id WHERE u.id=$1
+      ORDER BY p.id DESC`, [req.account.id]);
     res.set('Cache-Control','no-store').json(result.rows);
   });
 
@@ -77,9 +75,9 @@ export function localPlans(db) {
     // All reads use one snapshot, including sets from a concurrently edited workout.
     const copy = await db.query(`WITH source AS (
         SELECT w.id,w.user_id FROM workouts w JOIN users u ON u.id=w.user_id
-        WHERE w.id=$1 AND u.email=$2 AND u.password_hash=$3 AND w.status='completed'
+        WHERE w.id=$1 AND u.id=$2 AND w.status='completed'
       ), plan AS (
-        INSERT INTO plans(user_id,name) SELECT user_id,$4 FROM source RETURNING id
+        INSERT INTO plans(user_id,name) SELECT user_id,$3 FROM source RETURNING id
       ), moves AS (
         SELECT we.* FROM workout_exercises we JOIN source ON source.id=we.workout_id
       ), copied AS (
@@ -89,7 +87,7 @@ export function localPlans(db) {
         INSERT INTO plan_sets(plan_exercise_id,position,reps,weight_kg)
         SELECT c.id,s.position,s.reps,s.weight_kg FROM copied c JOIN moves m USING(position)
         JOIN workout_sets s ON s.workout_exercise_id=m.id
-      ) SELECT id FROM plan`, [workout_id,profile,marker,name.trim()]);
+      ) SELECT id FROM plan`, [workout_id,req.account.id,name.trim()]);
     if (!copy.rowCount) return res.status(404).json({error:'Тренировка не найдена'});
     res.status(201).json(copy.rows[0]);
   });
@@ -99,7 +97,7 @@ export function localPlans(db) {
       return res.status(400).json({error:'Некорректный номер плана'});
     }
     const result=await db.query(`DELETE FROM plans p USING users u WHERE p.user_id=u.id
-      AND u.email=$1 AND u.password_hash=$2 AND p.id=$3`,[profile,marker,req.params.id]);
+      AND u.id=$1 AND p.id=$2`,[req.account.id,req.params.id]);
     if (!result.rowCount) return res.status(404).json({error:'План не найден'});
     res.sendStatus(204);
   });
@@ -115,13 +113,10 @@ function saveEntry(db, plan) {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      await client.query('INSERT INTO users(email,password_hash) VALUES ($1,$2) ON CONFLICT DO NOTHING', [profile, marker]);
-      const owner = await client.query('SELECT id FROM users WHERE email=$1 AND password_hash=$2', [profile, marker]);
-      if (!owner.rowCount) throw new Error('Локальный профиль недоступен');
       const status=req.body.status ?? 'completed';
       const previous=req.body.previous_status ?? 'completed';
-      const user=owner.rows[0].id;
-      const params = [owner.rows[0].id, name.trim(), workout_date, duration_minutes ?? null];
+      const user=req.account.id;
+      const params = [req.account.id, name.trim(), workout_date, duration_minutes ?? null];
       const workout = plan
         ? (req.params.id
           ? await client.query('UPDATE plans SET name=$2 WHERE id=$3 AND user_id=$1 RETURNING id',[user,name.trim(),req.params.id])
@@ -175,26 +170,18 @@ export function customExercises(db) {
     if (typeof name!=='string' || !name.trim() || name.length>120 ||
       [description,equipment,muscle].some(v=>typeof v!=='string' || v.length>500) ||
       !['beginner','intermediate','advanced'].includes(difficulty)) return res.status(400).json({error:'Проверьте поля упражнения.'});
-    const result=await db.query(`WITH created AS (
-      INSERT INTO exercises(name,description,equipment,difficulty,source,source_key)
-      VALUES ($1,$2,$3,$4,'custom',$5) ON CONFLICT (source,source_key) DO NOTHING RETURNING id,name,description,equipment,difficulty,goals
-    ), linked AS (
-      INSERT INTO exercise_muscles(exercise_id,muscle_id)
-      SELECT c.id,m.id FROM created c JOIN muscle_groups m ON m.name=$6 RETURNING muscle_id
-    ) SELECT created.*, ARRAY(SELECT DISTINCT m.body_region FROM linked JOIN muscle_groups m ON m.id=linked.muscle_id) AS regions,
-      ARRAY(SELECT m.name FROM linked JOIN muscle_groups m ON m.id=linked.muscle_id) AS muscles FROM created`,[name.trim(),description.trim(),equipment.trim()?[equipment.trim()]:[],difficulty,
-      name.trim().toLocaleLowerCase('ru').replaceAll('ё','е'),muscle]);
-    if (!result.rowCount) return res.status(409).json({error:'Своё упражнение с таким названием уже есть.'});
-    res.status(201).json(result.rows[0]);
+    await db.query(`INSERT INTO exercise_submissions(author_id,name,description,equipment,muscle,difficulty)
+      VALUES ($1,$2,$3,$4,$5,$6)`,[req.account.id,name.trim(),description.trim(),equipment.trim(),muscle,difficulty]);
+    res.status(202).json({status:'pending'});
   });
   return router;
 }
 
 export function localProfile(db) {
   const router=express.Router();
-  router.get('/',async (_req,res)=>{
+  router.get('/',async (req,res)=>{
     const result=await db.query(`SELECT display_name, weight_kg, height_cm, to_char(birth_date,'YYYY-MM-DD') AS birth_date,
-      gender, goal FROM users WHERE email=$1 AND password_hash=$2`,[profile,marker]);
+      gender, goal FROM users WHERE id=$1`,[req.account.id]);
     res.json(result.rows[0] ?? {});
   });
   router.put('/goals',express.json(),async (req,res)=>{
@@ -203,10 +190,7 @@ export function localProfile(db) {
         values.join(',').length>120) return res.status(400).json({error:'Выберите группы мышц.'});
     const valid=await db.query('SELECT DISTINCT body_region FROM muscle_groups WHERE body_region=ANY($1::text[])',[values]);
     if(valid.rowCount!==new Set(values).size) return res.status(400).json({error:'Неизвестная группа мышц.'});
-    const result=await db.query(`INSERT INTO users(email,password_hash,goal) VALUES ($1,$2,$3)
-      ON CONFLICT (lower(email)) DO UPDATE SET goal=excluded.goal WHERE users.password_hash=$2 RETURNING id`,
-      [profile,marker,[...new Set(values)].join(',')]);
-    if(!result.rowCount) return res.status(409).json({error:'Локальный профиль недоступен.'});
+    await db.query('UPDATE users SET goal=$2 WHERE id=$1',[req.account.id,[...new Set(values)].join(',')]);
     res.sendStatus(204);
   });
   router.put('/',express.json(),async (req,res)=>{
@@ -215,12 +199,8 @@ export function localProfile(db) {
       [weight_kg,height_cm].some(v=>v!==null && !(typeof v==='number' && v>0 && v<1000)) ||
       (birth_date && !/^\d{4}-\d{2}-\d{2}$/.test(birth_date))) return res.status(400).json({error:'Проверьте поля профиля.'});
     try {
-      const result=await db.query(`INSERT INTO users(email,password_hash,display_name,weight_kg,height_cm,birth_date,gender,goal)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (lower(email)) DO UPDATE SET display_name=excluded.display_name,
-        weight_kg=excluded.weight_kg,height_cm=excluded.height_cm,birth_date=excluded.birth_date,gender=excluded.gender,
-        goal=excluded.goal WHERE users.password_hash=$2 RETURNING id`,
-        [profile,marker,display_name.trim(),weight_kg,height_cm,birth_date||null,gender,goal]);
-      if (!result.rowCount) return res.status(409).json({error:'Локальный профиль недоступен.'});
+      await db.query(`UPDATE users SET display_name=$2,weight_kg=$3,height_cm=$4,birth_date=$5,gender=$6,goal=$7 WHERE id=$1`,
+        [req.account.id,display_name.trim(),weight_kg,height_cm,birth_date||null,gender,goal]);
       res.sendStatus(204);
     } catch(error) {
       if(error.code==='22008') return res.status(400).json({error:'Проверьте дату рождения.'});

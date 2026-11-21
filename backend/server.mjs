@@ -4,17 +4,22 @@ import {fileURLToPath} from 'node:url';
 import {localJournal, localPlans, customExercises, localProfile} from './journal.mjs';
 import {localizeExercise} from './catalog/exercisedb-ru.mjs';
 
+import {accounts,requireAccount} from './accounts.mjs';
+import {community} from './community.mjs';
+
 const db = new pg.Pool({connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 4000});
 db.on('error', error => console.error('PostgreSQL:', error.message));
 const app = express();
 if (process.argv.includes('--local-journal')) {
+  app.use('/api/auth',accounts(db));
+  app.use('/api/local',requireAccount(db),community(db));
   app.use('/api/local/workouts', localJournal(db));
   app.use('/api/local/plans', localPlans(db));
   app.use('/api/local/profile',localProfile(db));
   app.use('/api/local/exercises', customExercises(db));
   app.use(express.static(fileURLToPath(new URL('../frontend/dist/', import.meta.url))));
 }
-const fields = `SELECT e.id, e.name, e.description, e.difficulty, e.equipment, e.goals,
+const fields = `SELECT e.source, e.id, e.name, e.description, e.difficulty, e.equipment, e.goals,
   ARRAY(SELECT DISTINCT m.body_region FROM exercise_muscles em JOIN muscle_groups m ON m.id = em.muscle_id
         WHERE em.exercise_id = e.id ORDER BY m.body_region) AS regions,
   ARRAY(SELECT m.name FROM exercise_muscles em JOIN muscle_groups m ON m.id = em.muscle_id
@@ -82,4 +87,5 @@ app.use((error, req, res, next) => {
 });
 
 const port = Number(process.env.PORT ?? 3000);
-app.listen(port, '127.0.0.1', () => console.log('Fitness API: http://127.0.0.1:' + port));
+const host=process.env.HOST || '127.0.0.1';
+app.listen(port, host, () => console.log('Fitness API: http://' + host + ':' + port));

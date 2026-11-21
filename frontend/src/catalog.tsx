@@ -36,7 +36,7 @@ export function Catalog({items, selected, onSelect, onStart}: {
   <div className="catalog-grid">{visible.map(item=>{
     const checked=selected.includes(item.id);
     return <article key={item.id} className={'card exercise-card'+(checked?' selected':'')}>
-      <h2>{item.name}</h2><p>{item.description}</p><dl>
+      <h2>{item.name}</h2>{item.source==='custom' && <small>Пользовательское</small>}<p>{item.description}</p><dl>
         <dt>Мышцы</dt><dd>{item.muscles.join(', ') || 'Не указаны'}</dd>
         <dt>Оборудование</dt><dd>{item.equipment.join(', ') || 'Не указано'}</dd>
         <dt>Сложность</dt><dd>{levels[item.difficulty]}</dd></dl>
