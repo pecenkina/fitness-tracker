@@ -9,7 +9,7 @@ import {usesCounterweight, describeWeight} from './load';
 import {Overview} from './overview';
 import './style.css';
 
-export type Exercise = {id: number; name: string; description: string; goals?:string[]; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
+export type Exercise = {id: number; name: string; description: string; regions:string[]; goals?:string[]; equipment: string[]; difficulty: 'beginner'|'intermediate'|'advanced'; muscles: string[]};
 export type Workout = {id: number; name: string; workout_date: string; status?: string; duration_minutes: number | null;
   exercises: {completed?: boolean; name: string; exercise_id: number; sets: {completed?: boolean; reps: number; weight_kg: number | null}[]}[]};
 type Plan = Pick<Workout,'id'|'name'|'exercises'>;
@@ -141,6 +141,7 @@ function App() {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
   const addToCatalog = (exercise: Exercise) => setCatalog(items =>
     [...items, exercise].sort((a,b) => a.name.localeCompare(b.name,'ru')));
+  const regions = [...new Set(catalog.flatMap(exercise => exercise.regions))].sort((a,b)=>a.localeCompare(b,'ru'));
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
   const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'|'profile'|'recommendations'>('overview');
@@ -151,6 +152,7 @@ function App() {
   const filteredHistory=history.filter(w=>(!dateFilter||w.workout_date===dateFilter)&&w.name.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
   function shiftWeek(weeks:number){const d=new Date(weekStart);d.setDate(d.getDate()+7*weeks);setWeekStart(d);setDateFilter('')}
   const [profile,setProfile]=useState<ProfileData>({});
+  const goal = profile.goal && regions.includes(profile.goal) ? profile.goal : '';
   const [mode,setMode]=useState<Mode>('workout');
   const [day,setDay]=useState(today);
   const [schedule,setSchedule]=useState<Workout[]>([]);
@@ -218,8 +220,8 @@ function App() {
     <button aria-current={!editor && page==='catalog' ? 'page' : undefined} onClick={() => navigate('catalog')}><img src="/forma/catalog.svg" alt=""/>Упражнения</button>
     <button aria-current={!editor && page==='recommendations'?'page':undefined} onClick={()=>navigate('recommendations')}><img src="/forma/recommendations.svg" alt=""/>Рекомендации</button>
     <button aria-current={!editor && page==='plans' ? 'page' : undefined} onClick={()=>navigate('plans')}><img src="/forma/plans.svg" alt=""/>Мои планы</button>
-    <button aria-current={!editor && page==='profile'?'page':undefined} onClick={()=>navigate('profile')}><img src="/forma/profile.svg" alt=""/>Профиль</button>
     </nav><small>Локальный профиль</small></aside><main>
+    <div className="profile-access"><button aria-label="Профиль" title="Профиль" aria-current={!editor && page==='profile'?'page':undefined} onClick={()=>navigate('profile')}><img src="/forma/profile.svg" alt=""/></button></div>
     {editor ? <Editor onCreateExercise={addToCatalog} mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog'||page==='recommendations' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
       if(target==='schedule') setDay(date);
       if(target==='workout'){setQuery('');setDateFilter('')}
@@ -231,7 +233,7 @@ function App() {
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='profile'?<Profile data={profile} onSave={p=>{setProfile(p);setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} goal={profile.goal} toProfile={()=>navigate('profile')} toPlan={ids=>{setSelected(ids);edit(undefined,undefined,'plan')}}/>:page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
+         {page==='profile'?<Profile data={profile} regions={regions} goal={goal} onSave={p=>{setProfile(p);setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} goal={goal} toProfile={()=>navigate('profile')} toPlan={ids=>{setSelected(ids);edit(undefined,undefined,'plan')}}/>:page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
            <p>Раскройте тренировку в журнале и выберите «Сохранить как план».</p>
            <button onClick={()=>navigate('history')}>Открыть журнал</button></section>}
            {plans.map(plan=><section className="card" key={plan.id}><h2>{plan.name}</h2>

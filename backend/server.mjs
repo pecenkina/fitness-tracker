@@ -15,6 +15,8 @@ if (process.argv.includes('--local-journal')) {
   app.use(express.static(fileURLToPath(new URL('../frontend/dist/', import.meta.url))));
 }
 const fields = `SELECT e.id, e.name, e.description, e.difficulty, e.equipment, e.goals,
+  ARRAY(SELECT DISTINCT m.body_region FROM exercise_muscles em JOIN muscle_groups m ON m.id = em.muscle_id
+        WHERE em.exercise_id = e.id ORDER BY m.body_region) AS regions,
   ARRAY(SELECT m.name FROM exercise_muscles em JOIN muscle_groups m ON m.id = em.muscle_id
         WHERE em.exercise_id = e.id ORDER BY m.name) AS muscles FROM exercises e`;
 const positiveId = value => /^[1-9][0-9]{0,9}$/.test(value) && Number(value) <= 2147483647;

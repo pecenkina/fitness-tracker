@@ -149,3 +149,8 @@ h2 {font-size:18px}h3{font-size:15px}
   .exercise-heading {grid-template-columns:minmax(0,1fr)}
   .exercise-heading .actions {grid-row:1;justify-content:flex-start}
 }
+
+.profile-access {display:flex;justify-content:flex-end;float:right;margin:0 0 8px 12px;position:relative;z-index:1}
+.profile-access button {width:44px;height:44px;border-radius:50%;display:grid;place-items:center;padding:0;background:#edf5ef}
+.profile-access button[aria-current=page] {border-color:#398758}
+.profile-access img {width:18px;height:20px}
