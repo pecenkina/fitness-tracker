@@ -152,7 +152,7 @@ function App() {
   const filteredHistory=history.filter(w=>(!dateFilter||w.workout_date===dateFilter)&&w.name.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
   function shiftWeek(weeks:number){const d=new Date(weekStart);d.setDate(d.getDate()+7*weeks);setWeekStart(d);setDateFilter('')}
   const [profile,setProfile]=useState<ProfileData>({});
-  const goal = profile.goal && regions.includes(profile.goal) ? profile.goal : '';
+  const goals = (profile.goal ?? '').split(',').filter(region => regions.includes(region));
   const [mode,setMode]=useState<Mode>('workout');
   const [day,setDay]=useState(today);
   const [schedule,setSchedule]=useState<Workout[]>([]);
@@ -233,7 +233,10 @@ function App() {
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='profile'?<Profile data={profile} regions={regions} goal={goal} onSave={p=>{setProfile(p);setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} goal={goal} toProfile={()=>navigate('profile')} toPlan={ids=>{setSelected(ids);edit(undefined,undefined,'plan')}}/>:page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
+         {page==='profile'?<Profile data={profile} regions={regions} goals={goals} onSave={p=>{setProfile(p);setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} history={history} regions={regions} goals={goals} onGoals={async values=>{
+             await request('/api/local/profile/goals',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({goals:values})});
+             setProfile(p=>({...p,goal:values.join(',')}));
+           }} toPlan={ids=>{setSelected(ids);edit(undefined,undefined,'plan')}}/>:page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
            <p>Раскройте тренировку в журнале и выберите «Сохранить как план».</p>
            <button onClick={()=>navigate('history')}>Открыть журнал</button></section>}
            {plans.map(plan=><section className="card" key={plan.id}><h2>{plan.name}</h2>

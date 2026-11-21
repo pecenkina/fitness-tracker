@@ -197,6 +197,18 @@ export function localProfile(db) {
       gender, goal FROM users WHERE email=$1 AND password_hash=$2`,[profile,marker]);
     res.json(result.rows[0] ?? {});
   });
+  router.put('/goals',express.json(),async (req,res)=>{
+    const values=req.body?.goals;
+    if (!Array.isArray(values) || !values.length || values.some(v=>typeof v!=='string' || !v || v.includes(',')) ||
+        values.join(',').length>120) return res.status(400).json({error:'Выберите группы мышц.'});
+    const valid=await db.query('SELECT DISTINCT body_region FROM muscle_groups WHERE body_region=ANY($1::text[])',[values]);
+    if(valid.rowCount!==new Set(values).size) return res.status(400).json({error:'Неизвестная группа мышц.'});
+    const result=await db.query(`INSERT INTO users(email,password_hash,goal) VALUES ($1,$2,$3)
+      ON CONFLICT (lower(email)) DO UPDATE SET goal=excluded.goal WHERE users.password_hash=$2 RETURNING id`,
+      [profile,marker,[...new Set(values)].join(',')]);
+    if(!result.rowCount) return res.status(409).json({error:'Локальный профиль недоступен.'});
+    res.sendStatus(204);
+  });
   router.put('/',express.json(),async (req,res)=>{
     const {display_name,weight_kg,height_cm,birth_date,gender,goal}=req.body ?? {};
     if ([display_name,gender,goal,birth_date].some(v=>typeof v!=='string' || v.length>120) ||
