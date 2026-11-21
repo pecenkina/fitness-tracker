@@ -177,11 +177,11 @@ export function customExercises(db) {
       !['beginner','intermediate','advanced'].includes(difficulty)) return res.status(400).json({error:'Проверьте поля упражнения.'});
     const result=await db.query(`WITH created AS (
       INSERT INTO exercises(name,description,equipment,difficulty,source,source_key)
-      VALUES ($1,$2,$3,$4,'custom',$5) ON CONFLICT (source,source_key) DO NOTHING RETURNING id
+      VALUES ($1,$2,$3,$4,'custom',$5) ON CONFLICT (source,source_key) DO NOTHING RETURNING id,name,description,equipment,difficulty,goals
     ), linked AS (
       INSERT INTO exercise_muscles(exercise_id,muscle_id)
-      SELECT c.id,m.id FROM created c JOIN muscle_groups m ON m.name=$6
-    ) SELECT id FROM created`,[name.trim(),description.trim(),equipment.trim()?[equipment.trim()]:[],difficulty,
+      SELECT c.id,m.id FROM created c JOIN muscle_groups m ON m.name=$6 RETURNING muscle_id
+    ) SELECT created.*, ARRAY(SELECT m.name FROM linked JOIN muscle_groups m ON m.id=linked.muscle_id) AS muscles FROM created`,[name.trim(),description.trim(),equipment.trim()?[equipment.trim()]:[],difficulty,
       name.trim().toLocaleLowerCase('ru').replaceAll('ё','е'),muscle]);
     if (!result.rowCount) return res.status(409).json({error:'Своё упражнение с таким названием уже есть.'});
     res.status(201).json(result.rows[0]);

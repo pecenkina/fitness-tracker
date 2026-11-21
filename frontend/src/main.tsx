@@ -37,7 +37,7 @@ function today() {
 }
 
 type Mode='workout'|'plan'|'schedule';
-function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}: {mode:Mode; day:string; template?: Plan; selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number, mode:Mode, date:string) => void}) {
+function Editor({mode,day,catalog, onCreateExercise, initial, template, selected, onClose, onSave}: {mode:Mode; day:string; onCreateExercise: (exercise: Exercise) => void; template?: Plan; selected: number[]; initial?: Workout; catalog: Exercise[]; onClose: () => void; onSave: (id: number, mode:Mode, date:string) => void}) {
   const source = initial ?? template;
   const [moves, setMoves] = useState<DraftMove[]>(() => source ? source.exercises.map(m => ({key: ++nextKey, id: String(m.exercise_id),
     sets: m.sets.map(s => ({completed:initial ? s.completed ?? m.completed ?? true : false,key: ++nextKey, reps: String(s.reps), weight: String(s.weight_kg ?? '')}))})) : (selected.length ? selected : [catalog[0].id]).map(id => newMove(String(id))));
@@ -99,7 +99,7 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
       const exercise = exerciseById.get(move.id);
       const weightLabel = usesCounterweight(exercise) ? 'Противовес' : 'Вес';
       return <section className="card" key={move.key}>
-      <div className="line"><h2>{exercise?.name || "Упражнение "+(index+1)}</h2>
+      <div className="exercise-heading"><h2>{exercise?.name || "Упражнение "+(index+1)}</h2>
         {moves.length > 1 && <div className="actions">
           <button type="button" disabled={index === 0} onClick={() => moveExercise(index, -1)}>↑ Выше</button>
           <button type="button" disabled={index === moves.length - 1} onClick={() => moveExercise(index, 1)}>↓ Ниже</button>
@@ -125,6 +125,10 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
     {mode==='workout' && !initial && <label className="tick"><input type="checkbox" name="save_plan"/>Также сохранить как план</label>}
     <div className="actions"><button type="button" disabled={moves.length >= 50} onClick={() => setMoves([...moves,newMove(String(catalog[0].id))])}>+ Упражнение</button>
 
+      <CustomExercise catalog={catalog} disabled={moves.length >= 50} saved={exercise => {
+        onCreateExercise(exercise);
+        setMoves(items => [...items, newMove(String(exercise.id))]);
+      }}/>
       {mode==='workout' && !initial && <button value="plan">Сохранить только план</button>}</div>
     </div><section className="entry-side"><div className="card"><h2>Сводка тренировки</h2>
     {[['Упражнения',moves.length],['Подходы',mode==='workout'?counted.length+' / '+allSets.length:allSets.length],['Общий объём',volume.toLocaleString('ru-RU')+' кг'],['Длительность',duration?duration+' мин':'—']].map(([k,v])=><div className="summary-line" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div>
@@ -135,6 +139,8 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
 
 function App() {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
+  const addToCatalog = (exercise: Exercise) => setCatalog(items =>
+    [...items, exercise].sort((a,b) => a.name.localeCompare(b.name,'ru')));
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
   const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'|'profile'|'recommendations'>('overview');
@@ -214,7 +220,7 @@ function App() {
     <button aria-current={!editor && page==='plans' ? 'page' : undefined} onClick={()=>navigate('plans')}><img src="/forma/plans.svg" alt=""/>Мои планы</button>
     <button aria-current={!editor && page==='profile'?'page':undefined} onClick={()=>navigate('profile')}><img src="/forma/profile.svg" alt=""/>Профиль</button>
     </nav><small>Локальный профиль</small></aside><main>
-    {editor ? <Editor mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog'||page==='recommendations' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
+    {editor ? <Editor onCreateExercise={addToCatalog} mode={mode} day={mode==='schedule'?day:today()} template={template} catalog={catalog} initial={initial} selected={page==='catalog'||page==='recommendations' ? selected : []} onClose={() => navigate(page)} onSave={(id,target,date) => {
       if(target==='schedule') setDay(date);
       if(target==='workout'){setQuery('');setDateFilter('')}
       if(page==='catalog') setSelected([]);
@@ -235,7 +241,7 @@ function App() {
              <button onClick={()=>edit(undefined,plan,'plan')}>Изменить план</button>
              <button className="danger" disabled={busy} onClick={()=>deletePlan(plan)}>Удалить план</button></div></section>)}</section><Calendar canSchedule={catalog.length>0} day={day} select={setDay} entries={schedule} plans={plans} onStart={row=>edit(row)} onCancel={remove}
           onSchedule={id=>edit(undefined,plans.find(p=>p.id===id),'schedule')}/></div> :
-           page==='catalog' ? <><CustomExercise equipment={[...new Set(catalog.flatMap(e=>e.equipment))].sort((a,b)=>a.localeCompare(b,'ru'))} muscles={[...new Set(catalog.flatMap(e=>e.muscles))]} saved={()=>{setNotice('Упражнение добавлено.');reload(n=>n+1)}}/><Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/></> : page==='overview' ? <Overview period={period} history={history} catalog={catalog} month={today().slice(0,7)}
+           page==='catalog' ? <><CustomExercise catalog={catalog} saved={exercise=>{addToCatalog(exercise);setNotice('Упражнение добавлено.')}}/><Catalog items={catalog} selected={selected} onSelect={setSelected} onStart={()=>edit()}/></> : page==='overview' ? <Overview period={period} history={history} catalog={catalog} month={today().slice(0,7)}
           openJournal={id => {setSaved(id);setQuery('');setDateFilter('');navigate('history')}}/> : <><div className="card history-filter"><h2>Все тренировки</h2><input aria-label="Поиск по названию тренировки" type="search" placeholder="Поиск по названию" value={query} onChange={e=>setQuery(e.target.value)}/></div>
         <section className="card"><div className="line"><h2>{weekStart.toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</h2><div><button onClick={()=>shiftWeek(-1)} aria-label="Предыдущая неделя">‹</button> <button onClick={()=>shiftWeek(1)} aria-label="Следующая неделя">›</button></div></div>
         <div className="week-strip">{Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);const key=d.toLocaleDateString('sv-SE');return <button key={key} aria-pressed={key===dateFilter} onClick={()=>setDateFilter(dateFilter===key?'':key)}><small>{d.toLocaleDateString('ru-RU',{weekday:'short'})}</small><b>{d.getDate()}</b></button>})}</div></section>

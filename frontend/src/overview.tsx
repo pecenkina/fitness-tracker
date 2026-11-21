@@ -31,6 +31,7 @@ export function Overview({history,catalog,month,period,openJournal}: {period:str
   const muscleVolumes = new Map<string,number>();
   const dailyBest = new Map<number, Map<string,number>>();
   const dailyLoad = new Map<string, {sum: number; count: number}>();
+  const repetitions = new Map<number, {name: string; total: number}>();
   let minutes: number|null=null, volume: number|null=null, maxKg: number|null=null;
   const exercises = new Map(catalog.map(e=>[e.id,e]));
   for(const workout of rows) {
@@ -42,7 +43,10 @@ export function Overview({history,catalog,month,period,openJournal}: {period:str
       const groups=exercise?.muscles;
       const targets=groups?.length ? groups : ['Не указано'];
       for(const set of move.sets) {
-        if(set.completed===false || set.weight_kg===null) continue;
+        if(set.completed===false) continue;
+        const previousTotal = repetitions.get(move.exercise_id)?.total ?? 0;
+        repetitions.set(move.exercise_id, {name: move.name, total: previousTotal + set.reps});
+        if(set.weight_kg===null) continue;
         const kg=set.weight_kg, work=kg*set.reps;
         const dates=dailyBest.get(move.exercise_id)??new Map<string,number>();
         const previous = dates.get(workout.workout_date) ?? kg;
@@ -80,6 +84,8 @@ export function Overview({history,catalog,month,period,openJournal}: {period:str
   }
   const popular = [...frequency.entries()].sort(([, a], [, b]) =>
     b.count - a.count || a.name.localeCompare(b.name, 'ru')).slice(0, 5);
+  const topReps = [...repetitions.entries()].sort(([,a],[,b]) =>
+    b.total - a.total || a.name.localeCompare(b.name,'ru')).slice(0,5);
   const muscleRows=[...muscleVolumes].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   let angle=0;
   const stops=muscleRows.map(([,v],i)=>{const start=angle;angle+=v/(volume||1)*360;return swatches[i%swatches.length]+' '+start+'deg '+angle+'deg'});
@@ -102,6 +108,10 @@ export function Overview({history,catalog,month,period,openJournal}: {period:str
       {popular.map(([id, item]) => <div className="data-row" key={id}><span>{item.name}</span><b>{item.count}</b></div>)}
       {!popular.length && <p className="empty">В этом месяце пока нет выполненных подходов.</p>}
     </section>
+    <section className="card"><h2>Топ упражнений по повторениям</h2>
+      <p className="muted">Сумма повторений в выполненных подходах за выбранный период</p>
+      {topReps.map(([id,item])=><div className="data-row" key={id}><span>{item.name}</span><b>{format(item.total)} повт.</b></div>)}
+      {!topReps.length && <p className="empty">За этот период пока нет выполненных подходов.</p>}</section>
     <section className="card"><h2>Топ упражнений</h2><p className="muted">По максимальному весу за период</p>
       {top.map(e=><div className="data-row" key={e.name}><span>{e.name}</span><b>{format(e.kg)} кг</b></div>)}
       {!top.length && <p className="empty">Пока нет подходов с указанным весом.</p>}</section></div></>;
