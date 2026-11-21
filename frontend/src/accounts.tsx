@@ -5,14 +5,16 @@ type Remembered=Pick<Account,'id'|'email'>;
 function remembered():Remembered[]{
   try{return JSON.parse(localStorage.getItem('forma.accounts') || '[]')}catch{return []}
 }
-export function Accounts({children}:{children:(user:Account,choose:(forget?:boolean)=>void)=>ReactNode}){
+export function Accounts({children}:{children:(user:Account,choose:(forget?:boolean)=>void,registered:boolean)=>ReactNode}){
   const [user,setUser]=useState<Account>();
+  const [registered,setRegistered]=useState(false);
   const [list,setList]=useState(remembered);
   const [mode,setMode]=useState<'login'|'register'>('login');
   const [email,setEmail]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
-  function activate(account:Account){
+  function activate(account:Account, afterRegistration=false){
+    setRegistered(afterRegistration);
     sessionStorage.setItem('forma.active',String(account.id));
     const next=[{id:account.id,email:account.email},...remembered().filter(x=>x.id!==account.id)];
     localStorage.setItem('forma.accounts',JSON.stringify(next));
@@ -46,11 +48,11 @@ export function Accounts({children}:{children:(user:Account,choose:(forget?:bool
     try{
       const res=await api('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
       const data=await res.json();if(!res.ok) throw Error(data.error);
-      activate(data);
+      activate(data,mode==='register');
     }catch(err){setError(err instanceof Error?err.message:'Ошибка входа')}
     finally{setBusy(false)}
   }
-  if(user) return children(user,choose);
+  if(user) return children(user,choose,registered);
   return <main className="account-page"><section className="card"><b className="brand"><i/>FORMA</b><h1>{mode==='register'?'Регистрация':'Вход'}</h1>
     {location.hash.startsWith('#share=') && <p>Войдите в аккаунт, в который хотите добавить тренировку.</p>}
     {list.length>0 && <div><h3>Аккаунты на устройстве</h3>{list.map(a=><button key={a.id} disabled={busy} onClick={()=>resume(String(a.id))}>{a.email}</button>)}</div>}

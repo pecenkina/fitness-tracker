@@ -136,13 +136,14 @@ function Editor({mode,day,catalog, initial, template, selected, onClose, onSave}
   </fieldset></form>;
 }
 
-function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
+function App({user,choose,registered}:{user:Account;registered:boolean;choose:(forget?:boolean)=>void}) {
   const [catalog,setCatalog] = useState<Exercise[]>([]);
   const [shareUrl,setShareUrl]=useState('');
   const regions = [...new Set(catalog.flatMap(exercise => exercise.regions))].sort((a,b)=>a.localeCompare(b,'ru'));
   const [history,setHistory] = useState<Workout[]>([]);
   const [editor,setEditor] = useState(false);
-  const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'|'profile'|'recommendations'>('overview');
+  const [welcome,setWelcome]=useState(registered);
+  const [page,setPage] = useState<'overview'|'history'|'catalog'|'plans'|'profile'|'recommendations'>(registered?'profile':'overview');
   const [period,setPeriod]=useState('month');
   const [query,setQuery]=useState('');
   const [dateFilter,setDateFilter]=useState('');
@@ -175,6 +176,7 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
   },[revision]);
   useEffect(()=>{
     let active=true;
+    if(welcome)return;
     async function importLink(){
       if(!location.hash.startsWith('#share='))return;
       const hash=location.hash;
@@ -189,7 +191,7 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
     }
     void importLink();window.addEventListener('hashchange',importLink);
     return ()=>{active=false;window.removeEventListener('hashchange',importLink)};
-  },[]);
+  },[welcome]);
   async function share(id:number){
     try{
       const {token}=await request<{token:string}>(journal+'/'+id+'/share',{method:'POST'});
@@ -198,6 +200,7 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
     }catch(e){setNotice(message(e))}
   }
   function navigate(target: typeof page) {
+    if(target!=='profile')setWelcome(false);
     setEditor(false); setPage(target); setShareUrl(''); setNotice('');
   }
   function edit(row?: Workout, plan?: Plan, next:Mode='workout') {
@@ -250,7 +253,7 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
       if(page==='catalog') setSelected([]);
       setSaved(id);setEditor(false);setPage(target==='workout'?'history':'plans');setNotice(target==='plan'?'План сохранён.':target==='schedule'?'Занятие запланировано.':'Тренировка сохранена.');reload(n => n+1)}}/> :
       <><div className="line hero"><div><h1>{page==='profile'?'Профиль':page==='recommendations'?'Рекомендации':page==='plans' ? 'Мои планы' : page==='catalog' ? 'Каталог упражнений' : page==='overview' ? 'Обзор' : 'Журнал тренировок'}</h1>
-      <p>{page==='profile'?'Личные параметры, цели и настройки аккаунта':page==='recommendations'?'Упражнения, подходящие под твою цель':page==='plans' ? 'Шаблоны, по которым удобно начинать тренировку' : page==='catalog' ? 'Найди упражнения по мышцам, сложности и оборудованию' : page==='overview' ? 'Аналитика тренировок и твой прогресс' : 'История занятий, достижения и подробности'}</p></div>
+      <p>{page==='profile' && welcome?'Заполни профиль и выбери целевые группы мышц для первых рекомендаций.':page==='profile'?'Личные параметры, цели и настройки аккаунта':page==='recommendations'?'Упражнения, подходящие под твою цель':page==='plans' ? 'Шаблоны, по которым удобно начинать тренировку' : page==='catalog' ? 'Найди упражнения по мышцам, сложности и оборудованию' : page==='overview' ? 'Аналитика тренировок и твой прогресс' : 'История занятий, достижения и подробности'}</p></div>
       </div>{(page==='overview' || page==='history') && <div className="entry-toolbar"><h2>{page==='overview'?(period==='month'?'Статистика за месяц':period==='7'?'Статистика за неделю':'Статистика за '+(period==='30'?'30 дней':'год')):'История занятий'}</h2>{page==='overview' && <div className="period">{[['7','7 дней'],['30','30 дней'],['year','Год']].map(([id,label])=><button key={id} aria-pressed={period===id} onClick={()=>setPeriod(period===id?'month':id)}>{label}</button>)}</div>}<button className="primary" disabled={loading || !!error || !catalog.length} onClick={() => edit()}>+ Добавить тренировку</button></div>}
       {page==='profile' && <section className="card"><h2>{user.email}</h2><button onClick={()=>choose()}>Сменить аккаунт</button> <button onClick={async()=>{try{await request('/api/auth/logout',{method:'POST'});choose(true)}catch(e){setNotice(message(e))}}}>Выйти</button></section>}
       {page==='catalog' && user.moderator && <Moderation refresh={()=>reload(n=>n+1)}/>}
@@ -258,7 +261,7 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
       {notice && <p role="status">{notice}</p>}
       {loading ? <p>Загружаем журнал…</p> : error ? <p role="alert">{error} <button onClick={() => reload(n => n+1)}>Повторить</button></p> :
         <>{!catalog.length && <p>Каталог пуст. Для локального показа загрузите упражнения миграцией 002_catalog_ru.sql.</p>}
-         {page==='profile'?<Profile data={profile} regions={regions} goals={goals} onSave={p=>{setProfile(p);setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} history={history} regions={regions} goals={goals} onGoals={async values=>{
+         {page==='profile'?<Profile data={profile} regions={regions} goals={goals} onSave={p=>{setProfile(p);if(welcome)navigate('overview');setNotice('Профиль сохранён.')}}/>:page==='recommendations'?<Recommendations catalog={catalog} history={history} regions={regions} goals={goals} onGoals={async values=>{
              await request('/api/local/profile/goals',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({goals:values})});
              setProfile(p=>({...p,goal:values.join(',')}));
            }} toPlan={ids=>{setSelected(ids);edit(undefined,undefined,'plan')}}/>:page==='plans' ? <div className="plans-layout"><section className="plan-list"><div className="line"><h2>Тренировочные планы</h2><button disabled={!catalog.length} onClick={()=>edit(undefined,undefined,'plan')}>+ Создать план</button></div>{!plans.length && <section className="card"><h2>Пока нет планов</h2>
@@ -288,4 +291,4 @@ function App({user,choose}:{user:Account;choose:(forget?:boolean)=>void}) {
         </details>)}</>}</>}</>}
   </main></div>;
 }
-createRoot(document.getElementById('root')!).render(<Accounts>{(user,choose)=><App key={user.id} user={user} choose={choose}/>}</Accounts>);
+createRoot(document.getElementById('root')!).render(<Accounts>{(user,choose,registered)=><App registered={registered} key={user.id} user={user} choose={choose}/>}</Accounts>);
